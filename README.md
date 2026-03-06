@@ -17,11 +17,12 @@ We start with Mary Shelley's *Frankenstein* from Project Gutenberg:
 4. Tokenizes the text with a simple regex split into words + special characters.
 5. Cleans tokens using `.strip()` and removes empty values.
 6. Prints the first 30 tokens.
-7. Creates a sorted list of unique tokens (vocabulary).
-8. Prints vocabulary size.
-9. Prints first 51 vocabulary entries for inspection.
-10. Builds a `SimpleTokenizerV1` class with `encode` and `decode`.
-11. Encodes and decodes a sample sentence.
+7. Creates a sorted list of unique tokens.
+8. Adds special context tokens: `<|unk|>` and `<|endoftext|>`.
+9. Prints vocabulary size.
+10. Prints first 51 vocabulary entries for inspection.
+11. Builds a `SimpleTokenizerV2` class with `encode` and `decode`.
+12. Encodes and decodes a sample sentence.
 
 ### Why this matters
 
@@ -36,8 +37,6 @@ python frankenlex_bootstrap.py
 
 ### Current tokenizer approach
 
-The script uses:
-
 ```python
 preprocessed = re.split(r"([,.:;?_!\"()\\[\\]'`]|--|\\s)", raw_text)
 preprocessed = [item.strip() for item in preprocessed if item and item.strip()]
@@ -49,36 +48,39 @@ tokenizer (e.g., byte-pair encoding).
 ## Step 2: Build token IDs foundation (vocabulary)
 
 Once tokens are created, we build the vocabulary by taking unique tokens and sorting
-them alphabetically.
+them alphabetically, then adding the special tokens.
 
 ```python
-all_words = sorted(set(preprocessed))
-vocab_size = len(all_words)
+all_tokens = sorted(set(preprocessed))
+all_tokens.extend(["<|unk|>", "<|endoftext|>"])
+vocab_size = len(all_tokens)
 print(vocab_size)
-print(all_words[:51])
+print(all_tokens[:51])
 ```
 
 Why this step:
 
 - `set(preprocessed)` keeps only unique tokens.
 - `sorted(...)` makes ordering deterministic.
+- `all_tokens.extend(["<|unk|>", "<|endoftext|>"])` adds special context tokens.
 - `vocab_size` tells us how many token IDs we need.
 - The first 51 entries are printed for quick sanity checking before mapping tokens to IDs.
 
-## Step 3: Implement `SimpleTokenizerV1` (encode/decode)
+## Step 3: Implement `SimpleTokenizerV2` (encode/decode)
 
 After creating the vocabulary, we map tokens to IDs and IDs back to tokens.
 
 ```python
-vocab = {token: idx for idx, token in enumerate(all_words)}
-tokenizer = SimpleTokenizerV1(vocab)
+vocab = {token: idx for idx, token in enumerate(all_tokens)}
+tokenizer = SimpleTokenizerV2(vocab)
 ```
 
 The class includes:
 
 - `encode(self, text)`: split text with the same regex preprocessing and convert tokens to IDs.
-- `decode(self, ids)`: convert IDs back to text and clean spacing around punctuation to reconstruct readable text.
-- Unicode punctuation normalization (`’`, `“`, `—`, BOM) is applied to keep corpus and input tokenization consistent.
+- Unknown words are replaced with `<|unk|>` during encoding.
+- `decode(self, ids)`: convert IDs back to text and remove spaces before punctuation with `r"\s+([.:;?!\"()'])"`.
+- Unicode punctuation normalization (`\u2019`, `\u201c`, `\u2014`, BOM) keeps corpus and input tokenization consistent.
 
 Demo in script:
 

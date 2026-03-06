@@ -7,7 +7,8 @@ This script:
 4) Prints the first 30 tokens.
 5) Builds a sorted unique vocabulary and prints vocab size.
 6) Prints the first 51 vocabulary entries.
-7) Builds a simple tokenizer class with encode/decode.
+7) Adds special context tokens.
+8) Builds a tokenizer class with encode/decode.
 """
 
 from urllib.request import urlopen
@@ -26,19 +27,19 @@ def download_text(url: str) -> str:
 
 
 def normalize_text(text: str) -> str:
-    """Normalize Unicode punctuation to simple ASCII tokenizer-friendly forms."""
+    """Normalize punctuation to ASCII tokenizer-friendly forms."""
     return (
         text.replace("\ufeff", "")
-        .replace("’", "'")
-        .replace("‘", "'")
-        .replace("“", '"')
-        .replace("”", '"')
-        .replace("—", "--")
+        .replace("\u2019", "'")
+        .replace("\u2018", "'")
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
+        .replace("\u2014", "--")
     )
 
 
-class SimpleTokenizerV1:
-    """Simple regex-split tokenizer with deterministic token-id mappings."""
+class SimpleTokenizerV2:
+    """Regex-split tokenizer with special-token fallback for unknown words."""
 
     def __init__(self, vocab: dict[str, int]) -> None:
         self.str_to_int = vocab
@@ -48,54 +49,49 @@ class SimpleTokenizerV1:
         text = normalize_text(text)
         preprocessed = re.split(TOKEN_PATTERN, text)
         preprocessed = [item.strip() for item in preprocessed if item and item.strip()]
-
-        unknown_tokens = [token for token in preprocessed if token not in self.str_to_int]
-        if unknown_tokens:
-            raise ValueError(
-                f"Unknown token(s) found: {unknown_tokens[:5]}. "
-                "Expand vocab or add an <unk> token."
-            )
-
-        return [self.str_to_int[token] for token in preprocessed]
+        tokens = [item if item in self.str_to_int else "<|unk|>" for item in preprocessed]
+        return [self.str_to_int[token] for token in tokens]
 
     def decode(self, ids: list[int]) -> str:
         text = " ".join(self.int_to_str[token_id] for token_id in ids)
-
-        # Remove spaces before punctuation, and after opening brackets.
-        text = re.sub(r"\s+([,.:;?_!\"()\[\]'`])", r"\1", text)
-        text = re.sub(r"([(\[])\s+", r"\1", text)
+        # Remove spaces before punctuation.
+        text = re.sub(r"\s+([.:;?!\"()'])", r"\1", text)
         # Merge apostrophe-based contractions back together: It ' s -> It's
         text = re.sub(r"'\s+(\w)", r"'\1", text)
         return text
 
 
 def main() -> None:
-    # Avoid Windows console encoding errors when text contains BOM/Unicode chars.
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
 
     raw_text = normalize_text(download_text(GUTENBERG_URL))
-
     print(f"Total number of characters: {len(raw_text)}")
     print(raw_text[:99])
 
-    # Split on punctuation + whitespace and keep punctuation as separate tokens.
     preprocessed = re.split(TOKEN_PATTERN, raw_text)
     preprocessed = [item.strip() for item in preprocessed if item and item.strip()]
-
     print(preprocessed[:30])
 
-    all_words = sorted(set(preprocessed))
-    vocab_size = len(all_words)
-    print(vocab_size)
-    print(all_words[:51])
+    all_tokens = sorted(set(preprocessed))
+    all_tokens.extend(["<|unk|>", "<|endoftext|>"])
 
-    vocab = {token: idx for idx, token in enumerate(all_words)}
-    tokenizer = SimpleTokenizerV1(vocab)
+    vocab_size = len(all_tokens)
+    print(vocab_size)
+    print(all_tokens[:51])
+
+    vocab = {token: idx for idx, token in enumerate(all_tokens)}
+    tokenizer = SimpleTokenizerV2(vocab)
+
     text = "It's the last he did"
     ids = tokenizer.encode(text)
     print(ids)
     print(tokenizer.decode(ids))
+
+    text_pair = "The modern prometheus . <|endoftext|> The Project Gutenberg ."
+    pair_ids = tokenizer.encode(text_pair)
+    print(pair_ids)
+    print(tokenizer.decode(pair_ids))
 
 
 if __name__ == "__main__":
