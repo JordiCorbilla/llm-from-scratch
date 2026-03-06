@@ -20,6 +20,8 @@ We start with Mary Shelley's *Frankenstein* from Project Gutenberg:
 7. Creates a sorted list of unique tokens (vocabulary).
 8. Prints vocabulary size.
 9. Prints first 51 vocabulary entries for inspection.
+10. Builds a `SimpleTokenizerV1` class with `encode` and `decode`.
+11. Encodes and decodes a sample sentence.
 
 ### Why this matters
 
@@ -62,3 +64,27 @@ Why this step:
 - `sorted(...)` makes ordering deterministic.
 - `vocab_size` tells us how many token IDs we need.
 - The first 51 entries are printed for quick sanity checking before mapping tokens to IDs.
+
+## Step 3: Implement `SimpleTokenizerV1` (encode/decode)
+
+After creating the vocabulary, we map tokens to IDs and IDs back to tokens.
+
+```python
+vocab = {token: idx for idx, token in enumerate(all_words)}
+tokenizer = SimpleTokenizerV1(vocab)
+```
+
+The class includes:
+
+- `encode(self, text)`: split text with the same regex preprocessing and convert tokens to IDs.
+- `decode(self, ids)`: convert IDs back to text and clean spacing around punctuation to reconstruct readable text.
+- Unicode punctuation normalization (`’`, `“`, `—`, BOM) is applied to keep corpus and input tokenization consistent.
+
+Demo in script:
+
+```python
+text = "It's the last he did"
+ids = tokenizer.encode(text)
+print(ids)
+print(tokenizer.decode(ids))
+```
