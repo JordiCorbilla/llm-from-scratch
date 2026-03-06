@@ -5,6 +5,8 @@ This script:
 2) Prints total character count and the first 99 characters.
 3) Performs a simple regex-based split into words and punctuation tokens.
 4) Prints the first 30 tokens.
+5) Builds a sorted unique vocabulary and prints vocab size.
+6) Prints the first 51 vocabulary entries.
 """
 
 from urllib.request import urlopen
@@ -36,6 +38,11 @@ def main() -> None:
     preprocessed = [item.strip() for item in preprocessed if item and item.strip()]
 
     print(preprocessed[:30])
+
+    all_words = sorted(set(preprocessed))
+    vocab_size = len(all_words)
+    print(vocab_size)
+    print(all_words[:51])
 
 
 if __name__ == "__main__":

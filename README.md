@@ -17,6 +17,9 @@ We start with Mary Shelley's *Frankenstein* from Project Gutenberg:
 4. Tokenizes the text with a simple regex split into words + special characters.
 5. Cleans tokens using `.strip()` and removes empty values.
 6. Prints the first 30 tokens.
+7. Creates a sorted list of unique tokens (vocabulary).
+8. Prints vocabulary size.
+9. Prints first 51 vocabulary entries for inspection.
 
 ### Why this matters
 
@@ -40,3 +43,22 @@ preprocessed = [item.strip() for item in preprocessed if item and item.strip()]
 
 This is intentionally simple and a good first pass before moving to a more robust
 tokenizer (e.g., byte-pair encoding).
+
+## Step 2: Build token IDs foundation (vocabulary)
+
+Once tokens are created, we build the vocabulary by taking unique tokens and sorting
+them alphabetically.
+
+```python
+all_words = sorted(set(preprocessed))
+vocab_size = len(all_words)
+print(vocab_size)
+print(all_words[:51])
+```
+
+Why this step:
+
+- `set(preprocessed)` keeps only unique tokens.
+- `sorted(...)` makes ordering deterministic.
+- `vocab_size` tells us how many token IDs we need.
+- The first 51 entries are printed for quick sanity checking before mapping tokens to IDs.
