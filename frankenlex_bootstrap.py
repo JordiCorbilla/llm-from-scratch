@@ -9,11 +9,14 @@ This script:
 6) Prints the first 51 vocabulary entries.
 7) Adds special context tokens.
 8) Builds a tokenizer class with encode/decode.
+9) Demonstrates GPT-2 byte-pair encoding with tiktoken.
 """
 
 from urllib.request import urlopen
 import re
 import sys
+
+import tiktoken
 
 
 GUTENBERG_URL = "https://www.gutenberg.org/cache/epub/84/pg84.txt"
@@ -54,9 +57,7 @@ class SimpleTokenizerV2:
 
     def decode(self, ids: list[int]) -> str:
         text = " ".join(self.int_to_str[token_id] for token_id in ids)
-        # Remove spaces before punctuation.
         text = re.sub(r"\s+([.:;?!\"()'])", r"\1", text)
-        # Merge apostrophe-based contractions back together: It ' s -> It's
         text = re.sub(r"'\s+(\w)", r"'\1", text)
         return text
 
@@ -97,6 +98,22 @@ def main() -> None:
     unk_ids = tokenizer.encode(text_with_unknown)
     print(unk_ids)
     print(tokenizer.decode(unk_ids))
+
+    print(f"tiktoken version: {tiktoken.__version__}")
+    bpe_tokenizer = tiktoken.get_encoding("gpt2")
+
+    bpe_text = raw_text[:400] + " <|endoftext|> " + raw_text[400:480]
+    bpe_ids = bpe_tokenizer.encode(bpe_text, allowed_special={"<|endoftext|>"})
+    print(bpe_ids[:40])
+    print(bpe_tokenizer.decode(bpe_ids) == bpe_text)
+
+    unknown_sample = "Akwirw ier"
+    unknown_ids = bpe_tokenizer.encode(unknown_sample)
+    print(unknown_ids)
+    for token_id in unknown_ids:
+        print(f"{token_id} -> {bpe_tokenizer.decode([token_id])!r}")
+    print(bpe_tokenizer.decode(unknown_ids))
+    print(bpe_tokenizer.decode(unknown_ids) == unknown_sample)
 
 
 if __name__ == "__main__":
