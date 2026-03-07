@@ -93,6 +93,11 @@ def main() -> None:
     print(pair_ids)
     print(tokenizer.decode(pair_ids))
 
+    text_with_unknown = "Blorptastic quantum-capybara appears ."
+    unk_ids = tokenizer.encode(text_with_unknown)
+    print(unk_ids)
+    print(tokenizer.decode(unk_ids))
+
 
 if __name__ == "__main__":
     main()
