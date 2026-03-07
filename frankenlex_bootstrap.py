@@ -82,22 +82,22 @@ def main() -> None:
     print(all_tokens[:51])
 
     vocab = {token: idx for idx, token in enumerate(all_tokens)}
-    tokenizer = SimpleTokenizerV2(vocab)
+    simple_tokenizer = SimpleTokenizerV2(vocab)
 
     text = "It's the last he did"
-    ids = tokenizer.encode(text)
+    ids = simple_tokenizer.encode(text)
     print(ids)
-    print(tokenizer.decode(ids))
+    print(simple_tokenizer.decode(ids))
 
     text_pair = "The modern prometheus . <|endoftext|> The Project Gutenberg ."
-    pair_ids = tokenizer.encode(text_pair)
+    pair_ids = simple_tokenizer.encode(text_pair)
     print(pair_ids)
-    print(tokenizer.decode(pair_ids))
+    print(simple_tokenizer.decode(pair_ids))
 
     text_with_unknown = "Blorptastic quantum-capybara appears ."
-    unk_ids = tokenizer.encode(text_with_unknown)
+    unk_ids = simple_tokenizer.encode(text_with_unknown)
     print(unk_ids)
-    print(tokenizer.decode(unk_ids))
+    print(simple_tokenizer.decode(unk_ids))
 
     print(f"tiktoken version: {tiktoken.__version__}")
     bpe_tokenizer = tiktoken.get_encoding("gpt2")
@@ -115,6 +115,23 @@ def main() -> None:
     print(bpe_tokenizer.decode(unknown_ids))
     print(bpe_tokenizer.decode(unknown_ids) == unknown_sample)
 
+    enc_text = bpe_tokenizer.encode(raw_text)
+    print(f"Total number of tokens: {len(enc_text)}")
+
+    enc_sample = enc_text[45:]
+    context_size = 4
+    x = enc_sample[:context_size]
+    y = enc_sample[1:context_size+1]
+    print()
+    print("x:", x)
+    print("y:      ", y)
+    print()
+
+    for i in range(1, context_size + 1):
+        context = enc_sample[:i]
+        target = enc_sample[i]
+        print(f"context ids: {context} ---> target id: {target}")
+        print(f"context text: {bpe_tokenizer.decode(context)!r} ---> next token text: {bpe_tokenizer.decode([target])}")
 
 if __name__ == "__main__":
     main()

@@ -106,3 +106,42 @@ print(tokenizer.decode(ids) == sample)
 ```
 
 With BPE, unknown words are split into known subword/byte units, so full decode should still reconstruct the original text.
+
+## Step 5: Data Sampling With Sliding Window
+
+After tokenizing the full text with BPE, build input-target pairs for next-token prediction.
+
+```python
+enc_text = tokenizer.encode(raw_text)
+print(len(enc_text))
+```
+
+For demo purposes, skip first 50 tokens:
+
+```python
+enc_sample = enc_text[50:]
+```
+
+Create a small context window:
+
+```python
+context_size = 4
+x = enc_sample[:context_size]
+y = enc_sample[1:context_size+1]
+print("x:", x)
+print("y:", y)
+```
+
+`x` and `y` are shifted by one token, which is the core next-word prediction setup.
+
+Then inspect next-token targets progressively:
+
+```python
+for i in range(1, context_size + 1):
+    context = enc_sample[:i]
+    target = enc_sample[i]
+    print(context, "->", target)
+    print(tokenizer.decode(context), "->", tokenizer.decode([target]))
+```
+
+This produces input-target pairs that can be used for LLM training.
