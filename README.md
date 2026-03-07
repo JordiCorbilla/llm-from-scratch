@@ -25,7 +25,7 @@ We start with Mary Shelley's *Frankenstein* from Project Gutenberg:
 
 The script:
 
-1. Downloads raw text from Gutenberg.
+1. Loads raw text from `data/pg84.txt` if present, otherwise downloads it once and caches it there.
 2. Prints total number of characters with `len(raw_text)`.
 3. Prints the first 99 characters with `raw_text[:99]`.
 4. Tokenizes text using regex into words + punctuation.

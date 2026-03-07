@@ -15,11 +15,13 @@ This script:
 from urllib.request import urlopen
 import re
 import sys
+from pathlib import Path
 
 import tiktoken
 
 
 GUTENBERG_URL = "https://www.gutenberg.org/cache/epub/84/pg84.txt"
+LOCAL_DATA_PATH = Path("data/pg84.txt")
 TOKEN_PATTERN = r"([,.:;?_!\"()\[\]'`]|--|\s)"
 
 
@@ -27,6 +29,17 @@ def download_text(url: str) -> str:
     """Download UTF-8 text from a URL."""
     with urlopen(url) as response:
         return response.read().decode("utf-8")
+
+
+def load_or_download_text(url: str, local_path: Path) -> str:
+    """Load text from local file if present, otherwise download and cache it."""
+    if local_path.exists():
+        return local_path.read_text(encoding="utf-8")
+
+    text = download_text(url)
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    local_path.write_text(text, encoding="utf-8")
+    return text
 
 
 def normalize_text(text: str) -> str:
@@ -66,7 +79,7 @@ def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
 
-    raw_text = normalize_text(download_text(GUTENBERG_URL))
+    raw_text = normalize_text(load_or_download_text(GUTENBERG_URL, LOCAL_DATA_PATH))
     print(f"Total number of characters: {len(raw_text)}")
     print(raw_text[:99])
 
