@@ -143,3 +143,36 @@ Case C: `max_length=2, stride=8` (sparse coverage):
 - To avoid skipping tokens, use `stride <= max_length` and preferably `stride=1` for full coverage.
 - Smaller stride increases overlap and training examples, but may increase overfitting risk due to repeated near-identical contexts.
 - Larger stride reduces overlap and compute cost, but can skip many token positions.
+
+## Step 7: Token + positional embeddings (256 dims)
+
+Now convert token IDs into dense vectors for the model:
+
+```python
+output_dim = 256
+token_embedding_layer = torch.nn.Embedding(vocab_size, output_dim)
+```
+
+Add positional information using context length:
+
+```python
+context_length = max_length
+pos_embedding_layer = torch.nn.Embedding(context_length, output_dim)
+pos_embeddings = pos_embedding_layer(torch.arange(context_length))
+```
+
+In the script, `context_length` is taken from a real batch shape and token embeddings
+are computed from batch token IDs:
+
+```python
+token_embeddings = token_embedding_layer(batch_input_ids)
+input_embeddings = token_embeddings + pos_embeddings
+```
+
+Expected shapes:
+
+- `pos_embeddings`: `[context_length, 256]`
+- `token_embeddings`: `[batch_size, context_length, 256]`
+- `input_embeddings`: `[batch_size, context_length, 256]`
+
+These `input_embeddings` are what the main LLM blocks (attention, MLP, etc.) consume.

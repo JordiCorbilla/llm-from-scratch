@@ -200,7 +200,7 @@ def main() -> None:
 
     print("\n--- GPTDatasetV1 / DataLoader demo ---")
     dataloader = create_dataloader_v1(
-        raw_text, batch_size=4, max_length=4, stride=1, suffle=False, drop_last=True, num_workers=0
+        raw_text, batch_size=8, max_length=4, stride=1, suffle=False, drop_last=True, num_workers=0
     )
     data_iter = iter(dataloader)
     first_batch = next(data_iter)
@@ -219,6 +219,22 @@ def main() -> None:
     print_coverage_stats(raw_text, max_length=8, stride=2)
     print_coverage_stats(raw_text, max_length=8, stride=8)
     print_coverage_stats(raw_text, max_length=8, stride=1)
+
+    print("\n--- Embedding demo (output_dim=256) ---")
+    output_dim = 256
+    context_length = first_batch[0].shape[1]
+    print("context_length:", context_length)
+    bpe_vocab_size = bpe_tokenizer.n_vocab
+
+    token_embedding_layer = torch.nn.Embedding(bpe_vocab_size, output_dim)
+    pos_embedding_layer = torch.nn.Embedding(context_length, output_dim)
+
+    token_embeddings = token_embedding_layer(first_batch[0])
+    pos_embeddings = pos_embedding_layer(torch.arange(context_length))
+    print("pos_embeddings shape:", pos_embeddings.shape)
+
+    input_embeddings = token_embeddings + pos_embeddings
+    print("input_embeddings shape:", input_embeddings.shape)
 
 
 if __name__ == "__main__":
