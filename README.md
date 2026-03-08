@@ -4,144 +4,142 @@ Steps to build a large language model from scratch.
 
 ## Setup
 
-Install dependency for byte-pair encoding:
+Install dependencies:
 
 ```bash
 python -m pip install tiktoken
+python -m pip install torch
 ```
 
-Run the script:
+Run:
 
 ```bash
 python frankenlex_bootstrap.py
 ```
 
-## Step 1: Read data and build a simple tokenizer
+## Step 1: Load and cache training text
 
-We start with Mary Shelley's *Frankenstein* from Project Gutenberg:
+The script uses Project Gutenberg's Frankenstein text and caches it locally at
+`data/pg84.txt` so it only downloads once.
 
-- Source URL: `https://www.gutenberg.org/cache/epub/84/pg84.txt`
-- Script: `frankenlex_bootstrap.py`
+## Step 2: Baseline regex tokenizer
 
-The script:
+The script builds a simple tokenizer with:
 
-1. Loads raw text from `data/pg84.txt` if present, otherwise downloads it once and caches it there.
-2. Prints total number of characters with `len(raw_text)`.
-3. Prints the first 99 characters with `raw_text[:99]`.
-4. Tokenizes text using regex into words + punctuation.
-5. Cleans tokens and removes empties.
-6. Prints the first 30 tokens.
+- vocabulary from sorted unique tokens
+- special tokens `<|unk|>` and `<|endoftext|>`
+- `SimpleTokenizerV2.encode(...)`
+- `SimpleTokenizerV2.decode(...)`
 
-## Step 2: Build vocabulary and special tokens
+This is a didactic tokenizer before switching to BPE.
 
-Create deterministic vocab with unique sorted tokens and append special tokens.
+## Step 3: Byte Pair Encoding with `tiktoken` (GPT-2)
 
-```python
-all_tokens = sorted(set(preprocessed))
-all_tokens.extend(["<|unk|>", "<|endoftext|>"])
-vocab_size = len(all_tokens)
-```
+The script demonstrates:
 
-Then create mappings:
+- `tiktoken.__version__`
+- `tiktoken.get_encoding("gpt2")`
+- encoding with `allowed_special={"<|endoftext|>"}`
+- decoding IDs back to text
+- unknown word decomposition (`"Akwirw ier"`) and reconstruction
 
-```python
-vocab = {token: idx for idx, token in enumerate(all_tokens)}
-```
+## Step 4: Sliding-window input/target pairs
 
-## Step 3: Implement `SimpleTokenizerV2`
-
-`SimpleTokenizerV2` provides:
-
-- `encode(text)`: regex tokenize + map unknowns to `<|unk|>`.
-- `decode(ids)`: map IDs back to tokens and clean spacing before punctuation.
-
-Examples in script:
-
-- Basic sentence encode/decode.
-- Two sentences separated by `<|endoftext|>`.
-- Unknown words triggering `<|unk|>`.
-
-## Step 4: Byte Pair Encoding (BPE) with `tiktoken`
-
-Use GPT-2 encoding:
-
-```python
-import tiktoken
-print(tiktoken.__version__)
-tokenizer = tiktoken.get_encoding("gpt2")
-```
-
-Encode text while allowing special token:
-
-```python
-integers = tokenizer.encode(text, allowed_special={"<|endoftext|>"})
-```
-
-Decode back:
-
-```python
-decoded = tokenizer.decode(integers)
-```
-
-### Unknown-word BPE example
-
-Input:
-
-```python
-sample = "Akwirw ier"
-ids = tokenizer.encode(sample)
-```
-
-Then inspect each token:
-
-```python
-for token_id in ids:
-    print(token_id, tokenizer.decode([token_id]))
-```
-
-Finally check reconstruction:
-
-```python
-print(tokenizer.decode(ids) == sample)
-```
-
-With BPE, unknown words are split into known subword/byte units, so full decode should still reconstruct the original text.
-
-## Step 5: Data Sampling With Sliding Window
-
-After tokenizing the full text with BPE, build input-target pairs for next-token prediction.
+Given encoded tokens:
 
 ```python
 enc_text = tokenizer.encode(raw_text)
-print(len(enc_text))
-```
-
-For demo purposes, skip first 50 tokens:
-
-```python
 enc_sample = enc_text[50:]
 ```
 
-Create a small context window:
+Create shifted pairs:
 
 ```python
 context_size = 4
 x = enc_sample[:context_size]
-y = enc_sample[1:context_size+1]
-print("x:", x)
-print("y:", y)
+y = enc_sample[1:context_size + 1]
 ```
 
-`x` and `y` are shifted by one token, which is the core next-word prediction setup.
+`y` is always `x` shifted by one token.
 
-Then inspect next-token targets progressively:
+## Step 5: Efficient PyTorch dataset + dataloader
+
+Implemented:
+
+- `GPTDatasetV1(Dataset)`
+- `create_dataloader_v1(txt, batch_size=4, max_length=256, stride=128, suffle=True, drop_last=True, num_workers=0)`
+
+`GPTDatasetV1` logic:
+
+1. Encode full text once with GPT-2 BPE.
+2. Slide a window over token IDs.
+3. For each window:
+   - `input_chunk = tokens[i : i + max_length]`
+   - `target_chunk = tokens[i + 1 : i + max_length + 1]`
+4. Return `(input_ids, target_ids)` tensors.
+
+`create_dataloader_v1` creates a `DataLoader` over this dataset.
+
+### Batch demo
+
+The script includes:
 
 ```python
-for i in range(1, context_size + 1):
-    context = enc_sample[:i]
-    target = enc_sample[i]
-    print(context, "->", target)
-    print(tokenizer.decode(context), "->", tokenizer.decode([target]))
+data_iter = iter(dataloader)
+first_batch = next(data_iter)
+second_batch = next(data_iter)
 ```
 
-This produces input-target pairs that can be used for LLM training.
+and prints both to show sequential sliding behavior.
+
+It also checks shift alignment:
+
+```python
+torch.equal(first_batch[0][:, 1:], first_batch[1][:, :-1])
+```
+
+Expected: `True`.
+
+## Step 6: Max length vs stride tradeoff
+
+The script prints stats for:
+
+- `(max_length=2, stride=8)`
+- `(max_length=8, stride=2)`
+- `(max_length=8, stride=8)`
+- `(max_length=8, stride=1)`
+
+### Intuition diagram
+
+Token positions:
+
+```text
+0 1 2 3 4 5 6 7 8 9 10 11 ...
+```
+
+Case A: `max_length=8, stride=8` (no overlap):
+
+```text
+[0........7] [8........15] [16.......23]
+```
+
+Case B: `max_length=8, stride=2` (heavy overlap):
+
+```text
+[0........7]
+    [2........9]
+        [4........11]
+            [6........13]
+```
+
+Case C: `max_length=2, stride=8` (sparse coverage):
+
+```text
+[0.1]        [8.9]        [16.17]
+```
+
+### Practical guidance
+
+- To avoid skipping tokens, use `stride <= max_length` and preferably `stride=1` for full coverage.
+- Smaller stride increases overlap and training examples, but may increase overfitting risk due to repeated near-identical contexts.
+- Larger stride reduces overlap and compute cost, but can skip many token positions.

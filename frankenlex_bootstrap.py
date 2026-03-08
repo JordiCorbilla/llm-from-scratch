@@ -1,23 +1,13 @@
-"""First-pass tokenizer bootstrap for LLM-from-scratch practice.
+"""First-pass tokenizer + dataloader bootstrap for LLM-from-scratch practice."""
 
-This script:
-1) Downloads Frankenstein text from Project Gutenberg.
-2) Prints total character count and the first 99 characters.
-3) Performs a simple regex-based split into words and punctuation tokens.
-4) Prints the first 30 tokens.
-5) Builds a sorted unique vocabulary and prints vocab size.
-6) Prints the first 51 vocabulary entries.
-7) Adds special context tokens.
-8) Builds a tokenizer class with encode/decode.
-9) Demonstrates GPT-2 byte-pair encoding with tiktoken.
-"""
-
-from urllib.request import urlopen
+from pathlib import Path
 import re
 import sys
-from pathlib import Path
+from urllib.request import urlopen
 
 import tiktoken
+import torch
+from torch.utils.data import DataLoader, Dataset
 
 
 GUTENBERG_URL = "https://www.gutenberg.org/cache/epub/84/pg84.txt"
@@ -26,16 +16,13 @@ TOKEN_PATTERN = r"([,.:;?_!\"()\[\]'`]|--|\s)"
 
 
 def download_text(url: str) -> str:
-    """Download UTF-8 text from a URL."""
     with urlopen(url) as response:
         return response.read().decode("utf-8")
 
 
 def load_or_download_text(url: str, local_path: Path) -> str:
-    """Load text from local file if present, otherwise download and cache it."""
     if local_path.exists():
         return local_path.read_text(encoding="utf-8")
-
     text = download_text(url)
     local_path.parent.mkdir(parents=True, exist_ok=True)
     local_path.write_text(text, encoding="utf-8")
@@ -43,7 +30,6 @@ def load_or_download_text(url: str, local_path: Path) -> str:
 
 
 def normalize_text(text: str) -> str:
-    """Normalize punctuation to ASCII tokenizer-friendly forms."""
     return (
         text.replace("\ufeff", "")
         .replace("\u2019", "'")
@@ -55,8 +41,6 @@ def normalize_text(text: str) -> str:
 
 
 class SimpleTokenizerV2:
-    """Regex-split tokenizer with special-token fallback for unknown words."""
-
     def __init__(self, vocab: dict[str, int]) -> None:
         self.str_to_int = vocab
         self.int_to_str = {idx: token for token, idx in vocab.items()}
@@ -73,6 +57,71 @@ class SimpleTokenizerV2:
         text = re.sub(r"\s+([.:;?!\"()'])", r"\1", text)
         text = re.sub(r"'\s+(\w)", r"'\1", text)
         return text
+
+
+class GPTDatasetV1(Dataset):
+    """Creates sliding-window (input, target) token sequences for GPT training."""
+
+    def __init__(self, txt: str, tokenizer, max_length: int, stride: int) -> None:
+        self.input_ids = []
+        self.target_ids = []
+
+        token_ids = tokenizer.encode(txt)
+        for i in range(0, len(token_ids) - max_length, stride):
+            input_chunk = token_ids[i : i + max_length]
+            target_chunk = token_ids[i + 1 : i + max_length + 1]
+            self.input_ids.append(torch.tensor(input_chunk, dtype=torch.long))
+            self.target_ids.append(torch.tensor(target_chunk, dtype=torch.long))
+
+    def __len__(self) -> int:
+        return len(self.input_ids)
+
+    def __getitem__(self, idx: int):
+        return self.input_ids[idx], self.target_ids[idx]
+
+
+def create_dataloader_v1(
+    txt: str,
+    batch_size: int = 4,
+    max_length: int = 256,
+    stride: int = 128,
+    suffle: bool = True,
+    drop_last: bool = True,
+    num_workers: int = 0,
+):
+    tokenizer = tiktoken.get_encoding("gpt2")
+    dataset = GPTDatasetV1(txt, tokenizer, max_length, stride)
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=suffle,
+        drop_last=drop_last,
+        num_workers=num_workers,
+    )
+
+
+def print_coverage_stats(txt: str, max_length: int, stride: int) -> None:
+    tokenizer = tiktoken.get_encoding("gpt2")
+    token_ids = tokenizer.encode(txt)
+    starts = list(range(0, len(token_ids) - max_length, stride))
+    windows = len(starts)
+
+    covered = [False] * max(len(token_ids) - 1, 0)
+    for s in starts:
+        end = min(s + max_length, len(covered))
+        for j in range(s, end):
+            covered[j] = True
+
+    covered_positions = sum(covered)
+    total_positions = len(token_ids) - 1
+    coverage_ratio = (covered_positions / total_positions * 100) if total_positions > 0 else 0.0
+    reuse_factor = (windows * max_length / covered_positions) if covered_positions > 0 else 0.0
+
+    print(
+        f"max_length={max_length}, stride={stride} | "
+        f"windows={windows}, covered_positions={covered_positions}/{total_positions} "
+        f"({coverage_ratio:.2f}%), reuse_factor={reuse_factor:.2f}x"
+    )
 
 
 def main() -> None:
@@ -134,17 +183,43 @@ def main() -> None:
     enc_sample = enc_text[45:]
     context_size = 4
     x = enc_sample[:context_size]
-    y = enc_sample[1:context_size+1]
+    y = enc_sample[1 : context_size + 1]
     print()
     print("x:", x)
-    print("y:      ", y)
+    print("y:", y)
     print()
 
     for i in range(1, context_size + 1):
         context = enc_sample[:i]
         target = enc_sample[i]
         print(f"context ids: {context} ---> target id: {target}")
-        print(f"context text: {bpe_tokenizer.decode(context)!r} ---> next token text: {bpe_tokenizer.decode([target])}")
+        print(
+            f"context text: {bpe_tokenizer.decode(context)!r} "
+            f"---> next token text: {bpe_tokenizer.decode([target])!r}"
+        )
+
+    print("\n--- GPTDatasetV1 / DataLoader demo ---")
+    dataloader = create_dataloader_v1(
+        raw_text, batch_size=4, max_length=4, stride=1, suffle=False, drop_last=True, num_workers=0
+    )
+    data_iter = iter(dataloader)
+    first_batch = next(data_iter)
+    print("first_batch:")
+    print(first_batch)
+
+    second_batch = next(data_iter)
+    print("second_batch:")
+    print(second_batch)
+
+    print("Shift check (first_batch):")
+    print(torch.equal(first_batch[0][:, 1:], first_batch[1][:, :-1]))
+
+    print("\n--- Window behavior examples ---")
+    print_coverage_stats(raw_text, max_length=2, stride=8)
+    print_coverage_stats(raw_text, max_length=8, stride=2)
+    print_coverage_stats(raw_text, max_length=8, stride=8)
+    print_coverage_stats(raw_text, max_length=8, stride=1)
+
 
 if __name__ == "__main__":
     main()
