@@ -10,13 +10,18 @@ python -m pip install -e ".[dev]"
 
 ## Train, resume, and sample
 
-The included `data/pg84.txt` is the Gutenberg corpus. A CPU smoke run:
+The included `data/pg84.txt` is the Gutenberg corpus. Use a short run to validate the
+pipeline, then a longer run for the included showcase checkpoint:
 
 ```powershell
 frankengpt train --device cpu --max-steps 100 --output runs/frankenstein
 frankengpt train --device cpu --max-steps 150 --resume runs/frankenstein/checkpoint_last.pt --output runs/frankenstein
 frankengpt generate --checkpoint runs/frankenstein/checkpoint_best.pt --prompt "I had worked hard" --temperature 0.7 --top-k 10
 ```
+
+For the bundled character-level model, 100 steps only verifies that training works. It
+does not produce coherent prose. The checked-in showcase checkpoint was trained through
+2,000 steps; it is still a compact educational model rather than a production text model.
 
 On a CUDA-capable system use `--device cuda`; mixed precision is enabled automatically. `--compile` opts in to `torch.compile` where PyTorch supports it. If the corpus is absent, add `--download` to train.
 
@@ -45,7 +50,12 @@ pytest
 frankengpt benchmark --checkpoint runs/frankenstein/checkpoint_best.pt --device cpu
 ```
 
-`frankenlex_bootstrap.py` remains as the original tokenizer/dataloader walkthrough; the maintained application lives under `src/frankengpt`.
+## Original learning notes (preserved background)
+
+The following notes document the original tokenizer and sliding-window work that led to
+the application. They are retained as learning material and historical context; the
+maintained, runnable implementation is under `src/frankengpt`, and
+`frankenlex_bootstrap.py` now delegates to its CLI.
 
 ## Step 1: Load and cache training text
 
