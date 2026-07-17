@@ -93,6 +93,7 @@ def save_checkpoint(
     """Save all state required for deterministic continuation of a training run."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f"{target.name}.tmp")
     torch.save(
         {
             "config": model.config.to_dict(),
@@ -105,8 +106,9 @@ def save_checkpoint(
             "history": history,
             "train_options": asdict(options),
         },
-        target,
+        temporary,
     )
+    temporary.replace(target)
 
 
 def load_checkpoint(
