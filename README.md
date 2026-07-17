@@ -1,21 +1,51 @@
-# llm-from-scratch
+# FrankenGPT: a trainable GPT from scratch
 
-Steps to build a large language model from scratch.
+This repository contains a compact, end-to-end decoder-only Transformer that trains locally on Mary Shelley's *Frankenstein*. It is intentionally small enough to run on CPU, but uses CUDA mixed precision automatically when a CUDA PyTorch build is available.
 
-## Setup
+## Install
 
-Install dependencies:
-
-```bash
-python -m pip install tiktoken
-python -m pip install torch
+```powershell
+python -m pip install -e ".[dev]"
 ```
 
-Run:
+## Train, resume, and sample
 
-```bash
-python frankenlex_bootstrap.py
+The included `data/pg84.txt` is the Gutenberg corpus. A CPU smoke run:
+
+```powershell
+frankengpt train --device cpu --max-steps 100 --output runs/frankenstein
+frankengpt train --device cpu --max-steps 150 --resume runs/frankenstein/checkpoint_last.pt --output runs/frankenstein
+frankengpt generate --checkpoint runs/frankenstein/checkpoint_best.pt --prompt "I had worked hard" --temperature 0.7 --top-k 10
 ```
+
+On a CUDA-capable system use `--device cuda`; mixed precision is enabled automatically. `--compile` opts in to `torch.compile` where PyTorch supports it. If the corpus is absent, add `--download` to train.
+
+## Architecture
+
+- Character-level tokenizer fitted only from the training corpus (lossless and fast for the small local dataset).
+- Learned token and positional embeddings.
+- Pre-layer-norm decoder blocks: masked multi-head self-attention, residual connections, GELU MLP, and dropout.
+- Tied input/output embedding weights, AdamW, warmup + cosine learning-rate decay, gradient clipping, checkpoints, and resumable optimizer/scheduler state.
+
+The default model (`d_model=128`, 4 layers, 4 heads, 64-token context) has roughly 0.8M trainable parameters, depending on corpus vocabulary size.
+
+## Commands
+
+```text
+frankengpt train [--help]      Train or resume and write checkpoint_{last,best}.pt plus metrics.json
+frankengpt generate [--help]   Generate from a saved checkpoint; supports temperature and top-k sampling
+frankengpt benchmark [--help]  Report forward/inference tokens per second and peak memory
+```
+
+## Validation
+
+```powershell
+ruff check .
+pytest
+frankengpt benchmark --checkpoint runs/frankenstein/checkpoint_best.pt --device cpu
+```
+
+`frankenlex_bootstrap.py` remains as the original tokenizer/dataloader walkthrough; the maintained application lives under `src/frankengpt`.
 
 ## Step 1: Load and cache training text
 
