@@ -28,6 +28,7 @@ On a CUDA-capable system use `--device cuda`; mixed precision is enabled automat
 ## Architecture
 
 - Character-level tokenizer fitted only from the training corpus (lossless and fast for the small local dataset).
+- Optional frequency-limited word tokenizer (`--tokenizer word`) for a more readable local showcase.
 - Learned token and positional embeddings.
 - Pre-layer-norm decoder blocks: masked multi-head self-attention, residual connections, GELU MLP, and dropout.
 - Tied input/output embedding weights, AdamW, warmup + cosine learning-rate decay, gradient clipping, checkpoints, and resumable optimizer/scheduler state.

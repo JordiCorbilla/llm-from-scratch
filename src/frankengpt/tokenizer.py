@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+from collections import Counter
 from pathlib import Path
 
 
@@ -46,3 +48,30 @@ class CharTokenizer:
     @classmethod
     def load(cls, path: str | Path) -> CharTokenizer:
         return cls(json.loads(Path(path).read_text(encoding="utf-8"))["tokens"])
+
+
+class WordTokenizer(CharTokenizer):
+    """A compact regex word tokenizer for more readable local model samples."""
+
+    unknown_token = "<unk>"
+    pattern = re.compile(r"\w+(?:['’]\w+)?|[^\w\s]", re.UNICODE)
+
+    @classmethod
+    def from_text(cls, text: str, max_vocab: int = 2_048) -> WordTokenizer:
+        if max_vocab < 2:
+            raise ValueError("max_vocab must be at least 2")
+        frequencies = Counter(cls.pattern.findall(text))
+        ordered = sorted(frequencies, key=lambda token: (-frequencies[token], token))
+        return cls([cls.unknown_token, *ordered[: max_vocab - 1]])
+
+    def encode(self, text: str) -> list[int]:
+        return [
+            self.stoi.get(token, self.stoi[self.unknown_token])
+            for token in self.pattern.findall(text)
+        ]
+
+    def decode(self, ids: list[int]) -> str:
+        text = " ".join(self.itos.get(index, self.unknown_token) for index in ids)
+        text = re.sub(r"\s+([,.;:!?%\)\]\}])", r"\1", text)
+        text = re.sub(r"([\(\[\{])\s+", r"\1", text)
+        return re.sub(r"\s+(['’])\s+", r"\1", text)

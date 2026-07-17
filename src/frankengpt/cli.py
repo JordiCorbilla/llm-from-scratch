@@ -39,6 +39,8 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--learning-rate", type=float, default=3e-4)
     train.add_argument("--eval-interval", type=int, default=25)
     train.add_argument("--compile", action="store_true")
+    train.add_argument("--tokenizer", choices=["char", "word"], default="char")
+    train.add_argument("--max-vocab", type=int, default=2_048)
     generate = sub.add_parser("generate")
     generate.add_argument("--checkpoint", required=True)
     generate.add_argument("--prompt", required=True)
@@ -58,7 +60,7 @@ def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     if args.command == "train":
         text = load_corpus(args.data, args.download)
-        vocab_size = len(set(text))
+        vocab_size = args.max_vocab if args.tokenizer == "word" else len(set(text))
         options = TrainOptions(
             max_steps=args.max_steps,
             batch_size=args.batch_size,
@@ -75,6 +77,8 @@ def main(argv: list[str] | None = None) -> None:
                     args.device,
                     args.resume,
                     args.compile,
+                    args.tokenizer,
+                    args.max_vocab,
                 ),
                 indent=2,
             )

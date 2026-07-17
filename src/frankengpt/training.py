@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from .config import GPTConfig
 from .data import TokenDataset
 from .model import GPT
-from .tokenizer import CharTokenizer
+from .tokenizer import CharTokenizer, WordTokenizer
 
 
 @dataclass
@@ -97,6 +97,7 @@ def save_checkpoint(
         {
             "config": model.config.to_dict(),
             "tokenizer": tokenizer.tokens,
+            "tokenizer_type": "word" if isinstance(tokenizer, WordTokenizer) else "char",
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
             "scheduler": scheduler.state_dict(),
@@ -115,7 +116,8 @@ def load_checkpoint(
     state = torch.load(path, map_location=device, weights_only=False)
     model = GPT(GPTConfig(**state["config"])).to(device)
     model.load_state_dict(state["model"])
-    return model, CharTokenizer(state["tokenizer"]), state
+    tokenizer_class = WordTokenizer if state.get("tokenizer_type") == "word" else CharTokenizer
+    return model, tokenizer_class(state["tokenizer"]), state
 
 
 def train_model(
@@ -126,11 +128,17 @@ def train_model(
     device_name: str = "auto",
     resume: str | Path | None = None,
     compile_model: bool = False,
+    tokenizer_kind: str = "char",
+    max_vocab: int = 2_048,
 ) -> dict[str, Any]:
     """Train or resume a GPT model and return recorded metrics."""
     torch.manual_seed(options.seed)
     device = select_device(device_name)
-    tokenizer = CharTokenizer.from_text(text)
+    tokenizer = (
+        WordTokenizer.from_text(text, max_vocab=max_vocab)
+        if tokenizer_kind == "word"
+        else CharTokenizer.from_text(text)
+    )
     token_ids = tokenizer.encode(text)
     train_loader, val_loader = make_loaders(token_ids, config.context_length, options.batch_size)
     model = GPT(config).to(device)
@@ -143,7 +151,11 @@ def train_model(
     start_step, history = 0, []
     if resume:
         saved_model, saved_tokenizer, state = load_checkpoint(resume, device)
-        if saved_model.config != config or saved_tokenizer.tokens != tokenizer.tokens:
+        if (
+            saved_model.config != config
+            or type(saved_tokenizer) is not type(tokenizer)
+            or saved_tokenizer.tokens != tokenizer.tokens
+        ):
             raise ValueError(
                 "checkpoint model configuration or tokenizer does not match this training run"
             )
@@ -151,6 +163,10 @@ def train_model(
         optimizer.load_state_dict(state["optimizer"])
         scheduler.load_state_dict(state["scheduler"])
         start_step, history = int(state["step"]), list(state["history"])
+        if start_step >= options.max_steps:
+            raise ValueError(
+                f"--max-steps ({options.max_steps}) must exceed checkpoint step ({start_step})"
+            )
     scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
     iterator = iter(train_loader)
     out = Path(output_dir)

@@ -2,6 +2,6 @@
 
 from .config import GPTConfig
 from .model import GPT
-from .tokenizer import CharTokenizer
+from .tokenizer import CharTokenizer, WordTokenizer
 
-__all__ = ["CharTokenizer", "GPT", "GPTConfig"]
+__all__ = ["CharTokenizer", "GPT", "GPTConfig", "WordTokenizer"]
