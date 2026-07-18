@@ -20,3 +20,4 @@ def test_word_tokenizer_emits_word_ids_and_readable_text():
     tokenizer = WordTokenizer.from_text("Hello, world! Hello again.", max_vocab=8)
     assert tokenizer.decode(tokenizer.encode("Hello, world!")) == "Hello, world!"
     assert tokenizer.vocab_size <= 8
+    assert tokenizer.forbidden_generation_ids == [tokenizer.stoi["<unk>"]]

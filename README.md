@@ -25,6 +25,18 @@ does not produce coherent prose. The checked-in showcase checkpoint was trained 
 
 On a CUDA-capable system use `--device cuda`; mixed precision is enabled automatically. `--compile` opts in to `torch.compile` where PyTorch supports it. If the corpus is absent, add `--download` to train.
 
+## Better showcase: train on multiple books
+
+More steps on one book lead to overfitting. Download the curated public-domain classics
+collection, then start a **new** word-token run; do not resume a single-book checkpoint
+because its vocabulary is different.
+
+```powershell
+frankengpt fetch-data --output-dir data/classics
+frankengpt train --data data/classics/*.txt --tokenizer word --max-vocab 16384 --device cuda --max-steps 10000 --batch-size 32 --output runs/classics-word
+frankengpt generate --checkpoint runs/classics-word/checkpoint_best.pt --prompt "I had worked hard for nearly two years" --temperature 0.6 --top-k 20
+```
+
 ## Architecture
 
 - Character-level tokenizer fitted only from the training corpus (lossless and fast for the small local dataset).

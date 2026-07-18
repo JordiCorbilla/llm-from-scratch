@@ -8,7 +8,7 @@ import json
 import torch
 
 from .config import GPTConfig
-from .data import load_corpus
+from .data import CLASSIC_CORPORA, download_classics, load_corpora
 from .training import TrainOptions, benchmark, load_checkpoint, select_device, train_model
 
 
@@ -24,7 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
     train = sub.add_parser("train")
-    train.add_argument("--data", default="data/pg84.txt")
+    train.add_argument("--data", nargs="+", default=["data/pg84.txt"])
     train.add_argument("--output", default="runs/frankenstein")
     train.add_argument("--download", action="store_true")
     train.add_argument("--resume")
@@ -41,6 +41,9 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--compile", action="store_true")
     train.add_argument("--tokenizer", choices=["char", "word"], default="char")
     train.add_argument("--max-vocab", type=int, default=2_048)
+    fetch = sub.add_parser("fetch-data", help="Download curated Project Gutenberg classics.")
+    fetch.add_argument("--output-dir", default="data/classics")
+    fetch.add_argument("--sources", nargs="*", choices=sorted(CLASSIC_CORPORA))
     generate = sub.add_parser("generate")
     generate.add_argument("--checkpoint", required=True)
     generate.add_argument("--prompt", required=True)
@@ -59,7 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     if args.command == "train":
-        text = load_corpus(args.data, args.download)
+        text = load_corpora(args.data, args.download)
         vocab_size = args.max_vocab if args.tokenizer == "word" else len(set(text))
         options = TrainOptions(
             max_steps=args.max_steps,
@@ -83,14 +86,21 @@ def main(argv: list[str] | None = None) -> None:
                 indent=2,
             )
         )
+    elif args.command == "fetch-data":
+        paths = download_classics(args.output_dir, args.sources)
+        print(json.dumps({"downloaded": [str(path) for path in paths]}, indent=2))
     elif args.command == "generate":
         device = select_device(args.device)
         model, tokenizer, _ = load_checkpoint(args.checkpoint, device)
         model.eval()
         prompt_ids = torch.tensor([tokenizer.encode(args.prompt)], dtype=torch.long, device=device)
-        result = model.generate(prompt_ids, args.max_new_tokens, args.temperature, args.top_k)[
-            0
-        ].tolist()
+        result = model.generate(
+            prompt_ids,
+            args.max_new_tokens,
+            args.temperature,
+            args.top_k,
+            getattr(tokenizer, "forbidden_generation_ids", None),
+        )[0].tolist()
         print(tokenizer.decode(result))
     else:
         device = select_device(args.device)

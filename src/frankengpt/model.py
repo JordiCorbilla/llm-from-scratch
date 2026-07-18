@@ -125,6 +125,7 @@ class GPT(nn.Module):
         max_new_tokens: int,
         temperature: float = 1.0,
         top_k: int | None = None,
+        forbidden_token_ids: list[int] | None = None,
     ) -> torch.Tensor:
         """Autoregressively sample tokens; long prompts are cropped to the model context."""
         if temperature <= 0:
@@ -132,6 +133,8 @@ class GPT(nn.Module):
         for _ in range(max_new_tokens):
             logits, _ = self(input_ids[:, -self.config.context_length :])
             logits = logits[:, -1, :] / temperature
+            if forbidden_token_ids:
+                logits[:, forbidden_token_ids] = float("-inf")
             if top_k is not None:
                 if top_k < 1:
                     raise ValueError("top_k must be positive")

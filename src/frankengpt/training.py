@@ -108,7 +108,14 @@ def save_checkpoint(
         },
         temporary,
     )
-    temporary.replace(target)
+    for attempt in range(10):
+        try:
+            temporary.replace(target)
+            break
+        except PermissionError:
+            if attempt == 9:
+                raise
+            time.sleep(0.1 * (attempt + 1))
 
 
 def load_checkpoint(

@@ -70,6 +70,11 @@ class WordTokenizer(CharTokenizer):
             for token in self.pattern.findall(text)
         ]
 
+    @property
+    def forbidden_generation_ids(self) -> list[int]:
+        """Token IDs that are useful for encoding but should never be sampled."""
+        return [self.stoi[self.unknown_token]]
+
     def decode(self, ids: list[int]) -> str:
         text = " ".join(self.itos.get(index, self.unknown_token) for index in ids)
         text = re.sub(r"\s+([,.;:!?%\)\]\}])", r"\1", text)

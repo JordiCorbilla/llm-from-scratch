@@ -2,13 +2,27 @@
 
 from __future__ import annotations
 
+from glob import glob
 from pathlib import Path
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import torch
 from torch.utils.data import Dataset
 
 GUTENBERG_URL = "https://www.gutenberg.org/cache/epub/84/pg84.txt"
+CLASSIC_CORPORA = {
+    "frankenstein": GUTENBERG_URL,
+    "alice": "https://www.gutenberg.org/cache/epub/11/pg11.txt",
+    "pride-prejudice": "https://www.gutenberg.org/cache/epub/1342/pg1342.txt",
+    "sherlock-holmes": "https://www.gutenberg.org/cache/epub/1661/pg1661.txt",
+    "dracula": "https://www.gutenberg.org/cache/epub/345/pg345.txt",
+}
+
+
+def _download(url: str) -> str:
+    request = Request(url, headers={"User-Agent": "frankengpt/0.1 educational project"})
+    with urlopen(request, timeout=30) as response:
+        return response.read().decode("utf-8")
 
 
 def load_corpus(path: str | Path, download: bool = False) -> str:
@@ -18,9 +32,35 @@ def load_corpus(path: str | Path, download: bool = False) -> str:
         if not download:
             raise FileNotFoundError(f"corpus not found: {corpus_path}")
         corpus_path.parent.mkdir(parents=True, exist_ok=True)
-        with urlopen(GUTENBERG_URL, timeout=30) as response:
-            corpus_path.write_text(response.read().decode("utf-8"), encoding="utf-8")
+        corpus_path.write_text(_download(GUTENBERG_URL), encoding="utf-8")
     return corpus_path.read_text(encoding="utf-8").replace("\ufeff", "")
+
+
+def load_corpora(paths: list[str | Path], download: bool = False) -> str:
+    """Combine one or more local corpora with clear document boundaries."""
+    if not paths:
+        raise ValueError("at least one corpus path is required")
+    expanded = [Path(match) for path in paths for match in (glob(str(path)) or [str(path)])]
+    if download and len(expanded) > 1:
+        raise ValueError("use fetch-data to download multiple curated corpora")
+    return "\n\n\n\n".join(load_corpus(path, download=download) for path in expanded)
+
+
+def download_classics(output_dir: str | Path, sources: list[str] | None = None) -> list[Path]:
+    """Download the curated public-domain English classics collection."""
+    selected = sources or list(CLASSIC_CORPORA)
+    unknown = sorted(set(selected) - CLASSIC_CORPORA.keys())
+    if unknown:
+        raise ValueError(f"unknown corpus source(s): {', '.join(unknown)}")
+    destination = Path(output_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for source in selected:
+        path = destination / f"{source}.txt"
+        if not path.exists():
+            path.write_text(_download(CLASSIC_CORPORA[source]), encoding="utf-8")
+        paths.append(path)
+    return paths
 
 
 class TokenDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
