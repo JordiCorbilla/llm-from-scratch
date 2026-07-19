@@ -206,3 +206,6 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 data/pg84.txt
+data/classics/
+runs/classics-word*/
+runs/distilgpt2*/

@@ -1,21 +1,86 @@
-# llm-from-scratch
+# FrankenGPT: a trainable GPT from scratch
 
-Steps to build a large language model from scratch.
+This repository contains a compact, end-to-end decoder-only Transformer that trains locally on Mary Shelley's *Frankenstein*. It is intentionally small enough to run on CPU, but uses CUDA mixed precision automatically when a CUDA PyTorch build is available.
 
-## Setup
+## Install
 
-Install dependencies:
-
-```bash
-python -m pip install tiktoken
-python -m pip install torch
+```powershell
+python -m pip install -e ".[dev]"
 ```
 
-Run:
+## Train, resume, and sample
 
-```bash
-python frankenlex_bootstrap.py
+The included `data/pg84.txt` is the Gutenberg corpus. Use a short run to validate the
+pipeline, then a longer run for the included showcase checkpoint:
+
+```powershell
+frankengpt train --device cpu --max-steps 100 --output runs/frankenstein
+frankengpt train --device cpu --max-steps 150 --resume runs/frankenstein/checkpoint_last.pt --output runs/frankenstein
+frankengpt generate --checkpoint runs/frankenstein/checkpoint_best.pt --prompt "I had worked hard" --temperature 0.7 --top-k 10
 ```
+
+For the bundled character-level model, 100 steps only verifies that training works. It
+does not produce coherent prose. The checked-in showcase checkpoint was trained through
+2,000 steps; it is still a compact educational model rather than a production text model.
+
+On a CUDA-capable system use `--device cuda`; mixed precision is enabled automatically. `--compile` opts in to `torch.compile` where PyTorch supports it. If the corpus is absent, add `--download` to train.
+
+## Better showcase: train on multiple books
+
+More steps on one book lead to overfitting. Download the curated public-domain classics
+collection, then start a **new** word-token run; do not resume a single-book checkpoint
+because its vocabulary is different.
+
+```powershell
+frankengpt fetch-data --output-dir data/classics
+frankengpt train --data data/classics/*.txt --tokenizer word --max-vocab 16384 --device cuda --max-steps 10000 --batch-size 32 --output runs/classics-word
+frankengpt generate --checkpoint runs/classics-word/checkpoint_best.pt --prompt "I had worked hard for nearly two years" --temperature 0.6 --top-k 20
+```
+
+## Polished local showcase (optional pretrained base)
+
+The scratch models demonstrate the architecture but need far more data for fluent prose.
+For a coherent demo, locally fine-tune `distilgpt2` on the same classics collection. This is
+explicitly a pretrained-base workflow, distinct from the from-scratch model above.
+
+```powershell
+python -m pip install -e ".[showcase]"
+frankengpt finetune-pretrained --data data/classics/*.txt --device cuda --max-steps 200 --output runs/distilgpt2-classics
+frankengpt generate-pretrained --checkpoint runs/distilgpt2-classics --prompt "My dear Victor," --temperature 0.7 --top-k 30
+```
+
+## Architecture
+
+- Character-level tokenizer fitted only from the training corpus (lossless and fast for the small local dataset).
+- Optional frequency-limited word tokenizer (`--tokenizer word`) for a more readable local showcase.
+- Learned token and positional embeddings.
+- Pre-layer-norm decoder blocks: masked multi-head self-attention, residual connections, GELU MLP, and dropout.
+- Tied input/output embedding weights, AdamW, warmup + cosine learning-rate decay, gradient clipping, checkpoints, and resumable optimizer/scheduler state.
+
+The default model (`d_model=128`, 4 layers, 4 heads, 64-token context) has roughly 0.8M trainable parameters, depending on corpus vocabulary size.
+
+## Commands
+
+```text
+frankengpt train [--help]      Train or resume and write checkpoint_{last,best}.pt plus metrics.json
+frankengpt generate [--help]   Generate from a saved checkpoint; supports temperature and top-k sampling
+frankengpt benchmark [--help]  Report forward/inference tokens per second and peak memory
+```
+
+## Validation
+
+```powershell
+ruff check .
+pytest
+frankengpt benchmark --checkpoint runs/frankenstein/checkpoint_best.pt --device cpu
+```
+
+## Original learning notes (preserved background)
+
+The following notes document the original tokenizer and sliding-window work that led to
+the application. They are retained as learning material and historical context; the
+maintained, runnable implementation is under `src/frankengpt`, and
+`frankenlex_bootstrap.py` now delegates to its CLI.
 
 ## Step 1: Load and cache training text
 

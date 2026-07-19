@@ -1,0 +1,14 @@
+{
+  "device": "cuda",
+  "parameters": 813440,
+  "duration_seconds": 1.6282217999978457,
+  "tokens_per_second": 3144.534731083182,
+  "history": [
+    {
+      "step": 5.0,
+      "train_loss": 4.116609954833985,
+      "val_loss": 4.110215425491333,
+      "lr": 0.00017999999999999998
+    }
+  ]
+}
