@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from glob import glob
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -25,6 +26,17 @@ def _download(url: str) -> str:
         return response.read().decode("utf-8")
 
 
+def strip_gutenberg_boilerplate(text: str) -> str:
+    """Remove Project Gutenberg catalogue headers and licence footers when present."""
+    start = re.search(r"\*\*\*\s*START OF (?:THE |THIS )?PROJECT GUTENBERG.*?\*\*\*", text, re.I)
+    if start:
+        text = text[start.end() :]
+    end = re.search(r"\*\*\*\s*END OF (?:THE |THIS )?PROJECT GUTENBERG.*?\*\*\*", text, re.I)
+    if end:
+        text = text[: end.start()]
+    return text.strip()
+
+
 def load_corpus(path: str | Path, download: bool = False) -> str:
     """Load UTF-8 text, optionally downloading Frankenstein if it is absent."""
     corpus_path = Path(path)
@@ -33,7 +45,9 @@ def load_corpus(path: str | Path, download: bool = False) -> str:
             raise FileNotFoundError(f"corpus not found: {corpus_path}")
         corpus_path.parent.mkdir(parents=True, exist_ok=True)
         corpus_path.write_text(_download(GUTENBERG_URL), encoding="utf-8")
-    return corpus_path.read_text(encoding="utf-8").replace("\ufeff", "")
+    return strip_gutenberg_boilerplate(
+        corpus_path.read_text(encoding="utf-8").replace("\ufeff", "")
+    )
 
 
 def load_corpora(paths: list[str | Path], download: bool = False) -> str:

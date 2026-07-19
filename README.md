@@ -37,6 +37,18 @@ frankengpt train --data data/classics/*.txt --tokenizer word --max-vocab 16384 -
 frankengpt generate --checkpoint runs/classics-word/checkpoint_best.pt --prompt "I had worked hard for nearly two years" --temperature 0.6 --top-k 20
 ```
 
+## Polished local showcase (optional pretrained base)
+
+The scratch models demonstrate the architecture but need far more data for fluent prose.
+For a coherent demo, locally fine-tune `distilgpt2` on the same classics collection. This is
+explicitly a pretrained-base workflow, distinct from the from-scratch model above.
+
+```powershell
+python -m pip install -e ".[showcase]"
+frankengpt finetune-pretrained --data data/classics/*.txt --device cuda --max-steps 200 --output runs/distilgpt2-classics
+frankengpt generate-pretrained --checkpoint runs/distilgpt2-classics --prompt "My dear Victor," --temperature 0.7 --top-k 30
+```
+
 ## Architecture
 
 - Character-level tokenizer fitted only from the training corpus (lossless and fast for the small local dataset).

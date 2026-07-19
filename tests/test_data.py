@@ -1,6 +1,6 @@
 import torch
 
-from frankengpt.data import TokenDataset, load_corpora
+from frankengpt.data import TokenDataset, load_corpora, strip_gutenberg_boilerplate
 
 
 def test_dataset_creates_shifted_next_token_pairs():
@@ -17,3 +17,8 @@ def test_load_corpora_combines_documents_with_boundary(tmp_path):
     second.write_text("second", encoding="utf-8")
     assert load_corpora([first, second]) == "first\n\n\n\nsecond"
     assert load_corpora([tmp_path / "*.txt"]) == "first\n\n\n\nsecond"
+
+
+def test_strip_gutenberg_boilerplate():
+    raw = "header\n*** START OF THE PROJECT GUTENBERG EBOOK TEST ***\nStory\n*** END OF THE PROJECT GUTENBERG EBOOK TEST ***\nfooter"
+    assert strip_gutenberg_boilerplate(raw) == "Story"

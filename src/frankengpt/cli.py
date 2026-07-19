@@ -9,6 +9,7 @@ import torch
 
 from .config import GPTConfig
 from .data import CLASSIC_CORPORA, download_classics, load_corpora
+from .pretrained import finetune_pretrained, generate_pretrained
 from .training import TrainOptions, benchmark, load_checkpoint, select_device, train_model
 
 
@@ -44,6 +45,26 @@ def build_parser() -> argparse.ArgumentParser:
     fetch = sub.add_parser("fetch-data", help="Download curated Project Gutenberg classics.")
     fetch.add_argument("--output-dir", default="data/classics")
     fetch.add_argument("--sources", nargs="*", choices=sorted(CLASSIC_CORPORA))
+    fine_tune = sub.add_parser(
+        "finetune-pretrained", help="Fine-tune distilgpt2 locally for showcase text."
+    )
+    fine_tune.add_argument("--data", nargs="+", required=True)
+    fine_tune.add_argument("--output", default="runs/distilgpt2-classics")
+    fine_tune.add_argument("--model", default="distilgpt2")
+    fine_tune.add_argument("--max-steps", type=int, default=200)
+    fine_tune.add_argument("--batch-size", type=int, default=2)
+    fine_tune.add_argument("--block-size", type=int, default=128)
+    fine_tune.add_argument("--learning-rate", type=float, default=5e-5)
+    fine_tune.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
+    generate_pretrained_parser = sub.add_parser("generate-pretrained")
+    generate_pretrained_parser.add_argument("--checkpoint", required=True)
+    generate_pretrained_parser.add_argument("--prompt", required=True)
+    generate_pretrained_parser.add_argument("--max-new-tokens", type=int, default=160)
+    generate_pretrained_parser.add_argument("--temperature", type=float, default=0.7)
+    generate_pretrained_parser.add_argument("--top-k", type=int, default=30)
+    generate_pretrained_parser.add_argument(
+        "--device", default="auto", choices=["auto", "cpu", "cuda"]
+    )
     generate = sub.add_parser("generate")
     generate.add_argument("--checkpoint", required=True)
     generate.add_argument("--prompt", required=True)
@@ -89,6 +110,33 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "fetch-data":
         paths = download_classics(args.output_dir, args.sources)
         print(json.dumps({"downloaded": [str(path) for path in paths]}, indent=2))
+    elif args.command == "finetune-pretrained":
+        print(
+            json.dumps(
+                finetune_pretrained(
+                    load_corpora(args.data),
+                    args.output,
+                    args.model,
+                    args.max_steps,
+                    args.batch_size,
+                    args.block_size,
+                    args.learning_rate,
+                    args.device,
+                ),
+                indent=2,
+            )
+        )
+    elif args.command == "generate-pretrained":
+        print(
+            generate_pretrained(
+                args.checkpoint,
+                args.prompt,
+                args.max_new_tokens,
+                args.temperature,
+                args.top_k,
+                args.device,
+            )
+        )
     elif args.command == "generate":
         device = select_device(args.device)
         model, tokenizer, _ = load_checkpoint(args.checkpoint, device)
