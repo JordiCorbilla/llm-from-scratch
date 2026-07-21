@@ -23,6 +23,25 @@ For the bundled character-level model, 100 steps only verifies that training wor
 does not produce coherent prose. The checked-in showcase checkpoint was trained through
 2,000 steps; it is still a compact educational model rather than a production text model.
 
+### Verified smoke-run output
+
+The following is an **actual** output from the current word-token training path. It used
+the bundled Frankenstein corpus, CPU, 10 steps, a 2-layer 32-dimensional model, and
+`temperature=0.7`, `top_k=10`:
+
+```text
+Training: train loss 7.622 -> 7.576; validation loss 7.630 -> 7.594
+
+Prompt: The
+Output: The safety interested interested few desires direction heavens heavens visible
+disappeared enemy affectionate safety quickly remained authors extinguish ship valley
+valley vengeance vengeance the entering
+```
+
+This demonstrates successful training, checkpoint loading, and generation—not coherent
+prose. For a user-facing demonstration, use the optional pretrained workflow below and
+fine-tune for substantially more than the smoke-test budget.
+
 On a CUDA-capable system use `--device cuda`; mixed precision is enabled automatically. `--compile` opts in to `torch.compile` where PyTorch supports it. If the corpus is absent, add `--download` to train.
 
 ## Better showcase: train on multiple books
