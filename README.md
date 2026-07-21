@@ -1,262 +1,188 @@
-# FrankenGPT: a trainable GPT from scratch
+# FrankenGPT: train a GPT-style language model locally
 
-This repository contains a compact, end-to-end decoder-only Transformer that trains locally on Mary Shelley's *Frankenstein*. It is intentionally small enough to run on CPU, but uses CUDA mixed precision automatically when a CUDA PyTorch build is available.
+FrankenGPT is a compact decoder-only Transformer that you can train, resume, benchmark,
+and sample on your own machine. This guide follows the complete workflow from a fresh
+checkout to a verified model checkpoint and generated text.
 
-## Install
+## Step 1 - Create an isolated Python environment
+
+Use Python 3.10 or newer. In PowerShell, create and activate a virtual environment, then
+install the project and its development tools.
 
 ```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 
-## Train, resume, and sample
-
-The included `data/pg84.txt` is the Gutenberg corpus. Use a short run to validate the
-pipeline, then a longer run for the included showcase checkpoint:
+Confirm that the command-line application is available:
 
 ```powershell
-frankengpt train --device cpu --max-steps 100 --output runs/frankenstein
-frankengpt train --device cpu --max-steps 150 --resume runs/frankenstein/checkpoint_last.pt --output runs/frankenstein
-frankengpt generate --checkpoint runs/frankenstein/checkpoint_best.pt --prompt "I had worked hard" --temperature 0.7 --top-k 10
+frankengpt --help
 ```
 
-For the bundled character-level model, 100 steps only verifies that training works. It
-does not produce coherent prose. The checked-in showcase checkpoint was trained through
-2,000 steps; it is still a compact educational model rather than a production text model.
+## Step 2 - Understand what will be trained
 
-### Verified smoke-run output
+The model learns next-token prediction. A sequence such as `The creature was` becomes an
+input, and the desired target is the same sequence shifted by one token. The model is a
+GPT-style decoder with:
 
-The following is an **actual** output from the current word-token training path. It used
-the bundled Frankenstein corpus, CPU, 10 steps, a 2-layer 32-dimensional model, and
-`temperature=0.7`, `top_k=10`:
+- learned token and positional embeddings
+- masked multi-head self-attention, so a token cannot see future tokens
+- pre-layer normalization, residual connections, GELU MLPs, and dropout
+- tied input/output embeddings
+- AdamW, warmup plus cosine learning-rate decay, gradient clipping, checkpoints, and
+  CUDA mixed precision when CUDA is selected
+
+## Step 3 - Train a small model from scratch
+
+Run this small CPU experiment first. `--download` obtains the Project Gutenberg
+Frankenstein corpus when `data/pg84.txt` is not already present. The command uses a
+word-level vocabulary and a deliberately small model so that it finishes quickly.
+
+```powershell
+frankengpt train --download --data data/pg84.txt --tokenizer word --max-vocab 2048 `
+  --device cpu --output runs/readme-smoke --max-steps 10 --batch-size 8 `
+  --context-length 16 --d-model 32 --n-heads 4 --n-layers 2 --eval-interval 5
+```
+
+The output directory contains all artifacts from the run and is ignored by Git.
+
+## Step 4 - Verify that training actually happened
+
+The command prints JSON with model size, throughput, and loss history. A verified CPU run
+produced the following result. Throughput varies by machine; the parameter count,
+vocabulary size, and loss trend are the useful checks.
 
 ```text
-Training: train loss 7.622 -> 7.576; validation loss 7.630 -> 7.594
-
-Prompt: The
-Output: The safety interested interested few desires direction heavens heavens visible
-disappeared enemy affectionate safety quickly remained authors extinguish ship valley
-valley vengeance vengeance the entering
+{
+  "device": "cpu",
+  "parameters": 91520,
+  "vocab_size": 2048,
+  "tokens_per_second": 2737.4,
+  "history": [
+    {"step": 5.0, "train_loss": 7.6221, "val_loss": 7.6297, "lr": 0.00018},
+    {"step": 10.0, "train_loss": 7.5760, "val_loss": 7.5936, "lr": 0.00030}
+  ]
+}
 ```
 
-This demonstrates successful training, checkpoint loading, and generation—not coherent
-prose. For a user-facing demonstration, use the optional pretrained workflow below and
-fine-tune for substantially more than the smoke-test budget.
+Both the training loss and the held-out validation loss decreased. That is the first
+evidence that optimization and validation are working. Inspect the files that were saved:
 
-On a CUDA-capable system use `--device cuda`; mixed precision is enabled automatically. `--compile` opts in to `torch.compile` where PyTorch supports it. If the corpus is absent, add `--download` to train.
+```powershell
+Get-ChildItem runs/readme-smoke
+Get-Content runs/readme-smoke/metrics.json
+```
 
-## Better showcase: train on multiple books
+Expected files: `checkpoint_best.pt`, `checkpoint_last.pt`, and `metrics.json`.
 
-More steps on one book lead to overfitting. Download the curated public-domain classics
-collection, then start a **new** word-token run; do not resume a single-book checkpoint
-because its vocabulary is different.
+## Step 5 - Resume from the saved checkpoint
+
+Checkpoints contain the model, tokenizer, optimizer, scheduler, history, and current
+step. Resume the same configuration with a larger `--max-steps` value:
+
+```powershell
+frankengpt train --data data/pg84.txt --tokenizer word --max-vocab 2048 `
+  --device cpu --output runs/readme-smoke --resume runs/readme-smoke/checkpoint_last.pt `
+  --max-steps 12 --batch-size 8 --context-length 16 --d-model 32 --n-heads 4 `
+  --n-layers 2 --eval-interval 5
+```
+
+`metrics.json` should preserve the step 5 and step 10 records and add a new measurement
+at step 12. Do not change model or tokenizer options when resuming a checkpoint.
+
+## Step 6 - Generate text from the trained checkpoint
+
+Load the best validation checkpoint and try different temperatures, top-k values, and
+prompt lengths. Lower temperature and lower top-k make output more conservative; higher
+values make it more varied.
+
+```powershell
+frankengpt generate --checkpoint runs/readme-smoke/checkpoint_best.pt --prompt "The" --max-new-tokens 24 --temperature 0.7 --top-k 10
+frankengpt generate --checkpoint runs/readme-smoke/checkpoint_best.pt --prompt "I had worked hard" --max-new-tokens 24 --temperature 0.5 --top-k 5
+frankengpt generate --checkpoint runs/readme-smoke/checkpoint_best.pt --prompt "I had worked hard for nearly two years" --max-new-tokens 24 --temperature 1.0 --top-k 30
+```
+
+One actual sample from the first command was:
+
+```text
+The and accents ship God, direction considered events soon disappeared, figure
+disappeared disappeared books direction direction quickly the remained grief quickly
+disappeared grief
+```
+
+The text is intentionally not fluent after only ten updates. The successful outcome here
+is that the model trained, selected the best checkpoint by validation loss, reloaded it,
+and generated tokens from its learned vocabulary without an error.
+
+## Step 7 - Train a larger scratch model
+
+For a more meaningful single-book experiment, use the character tokenizer and train for
+at least 2,000 steps. Use a new output directory so the small smoke checkpoint remains
+available for comparison.
+
+```powershell
+frankengpt train --download --device cpu --max-steps 2000 --output runs/frankenstein-char
+frankengpt generate --checkpoint runs/frankenstein-char/checkpoint_best.pt `
+  --prompt "I had worked hard" --temperature 0.7 --top-k 10
+```
+
+If CUDA is available, replace `--device cpu` with `--device cuda`. CUDA automatically
+enables mixed precision. Add `--compile` to opt in to `torch.compile` when it is supported
+by your PyTorch installation.
+
+## Step 8 - Improve the data for a better showcase
+
+Training longer on a single book eventually overfits. Download several public-domain
+books and start a new word-token run. Do not resume a Frankenstein-only checkpoint because
+the vocabulary is different.
 
 ```powershell
 frankengpt fetch-data --output-dir data/classics
-frankengpt train --data data/classics/*.txt --tokenizer word --max-vocab 16384 --device cuda --max-steps 10000 --batch-size 32 --output runs/classics-word
-frankengpt generate --checkpoint runs/classics-word/checkpoint_best.pt --prompt "I had worked hard for nearly two years" --temperature 0.6 --top-k 20
+frankengpt train --data data/classics/*.txt --tokenizer word --max-vocab 16384 `
+  --device cuda --max-steps 10000 --batch-size 32 --output runs/classics-word
+frankengpt generate --checkpoint runs/classics-word/checkpoint_best.pt `
+  --prompt "I had worked hard for nearly two years" --temperature 0.6 --top-k 20
 ```
 
-## Polished local showcase (optional pretrained base)
+If CUDA is unavailable, change the training command to `--device cpu` and reduce the
+batch size if memory is limited.
 
-The scratch models demonstrate the architecture but need far more data for fluent prose.
-For a coherent demo, locally fine-tune `distilgpt2` on the same classics collection. This is
-explicitly a pretrained-base workflow, distinct from the from-scratch model above.
+## Step 9 - Benchmark the checkpoint
+
+Benchmark reports forward-pass throughput, generation throughput, and peak memory use.
 
 ```powershell
-python -m pip install -e ".[showcase]"
-frankengpt finetune-pretrained --data data/classics/*.txt --device cuda --max-steps 200 --output runs/distilgpt2-classics
-frankengpt generate-pretrained --checkpoint runs/distilgpt2-classics --prompt "My dear Victor," --temperature 0.7 --top-k 30
+frankengpt benchmark --checkpoint runs/readme-smoke/checkpoint_best.pt --device cpu
 ```
 
-## Architecture
+Run the same command with `--device cuda` on a CUDA machine to measure GPU performance.
 
-- Character-level tokenizer fitted only from the training corpus (lossless and fast for the small local dataset).
-- Optional frequency-limited word tokenizer (`--tokenizer word`) for a more readable local showcase.
-- Learned token and positional embeddings.
-- Pre-layer-norm decoder blocks: masked multi-head self-attention, residual connections, GELU MLP, and dropout.
-- Tied input/output embedding weights, AdamW, warmup + cosine learning-rate decay, gradient clipping, checkpoints, and resumable optimizer/scheduler state.
+## Step 10 - Run the project checks
 
-The default model (`d_model=128`, 4 layers, 4 heads, 64-token context) has roughly 0.8M trainable parameters, depending on corpus vocabulary size.
-
-## Commands
-
-```text
-frankengpt train [--help]      Train or resume and write checkpoint_{last,best}.pt plus metrics.json
-frankengpt generate [--help]   Generate from a saved checkpoint; supports temperature and top-k sampling
-frankengpt benchmark [--help]  Report forward/inference tokens per second and peak memory
-```
-
-## Validation
+Before changing the model, run the formatter checks and test suite:
 
 ```powershell
 ruff check .
 pytest
-frankengpt benchmark --checkpoint runs/frankenstein/checkpoint_best.pt --device cpu
 ```
 
-## Original learning notes (preserved background)
+The tests cover tokenization, shifted dataset targets, Transformer forward passes, causal
+attention masking, non-contiguous loss inputs, checkpoint loading, resumption safeguards,
+and generation.
 
-The following notes document the original tokenizer and sliding-window work that led to
-the application. They are retained as learning material and historical context; the
-maintained, runnable implementation is under `src/frankengpt`, and
-`frankenlex_bootstrap.py` now delegates to its CLI.
+## Step 11 - Explore the available commands
 
-## Step 1: Load and cache training text
+Each command provides its own options and defaults:
 
-The script uses Project Gutenberg's Frankenstein text and caches it locally at
-`data/pg84.txt` so it only downloads once.
-
-## Step 2: Baseline regex tokenizer
-
-The script builds a simple tokenizer with:
-
-- vocabulary from sorted unique tokens
-- special tokens `<|unk|>` and `<|endoftext|>`
-- `SimpleTokenizerV2.encode(...)`
-- `SimpleTokenizerV2.decode(...)`
-
-This is a didactic tokenizer before switching to BPE.
-
-## Step 3: Byte Pair Encoding with `tiktoken` (GPT-2)
-
-The script demonstrates:
-
-- `tiktoken.__version__`
-- `tiktoken.get_encoding("gpt2")`
-- encoding with `allowed_special={"<|endoftext|>"}`
-- decoding IDs back to text
-- unknown word decomposition (`"Akwirw ier"`) and reconstruction
-
-## Step 4: Sliding-window input/target pairs
-
-Given encoded tokens:
-
-```python
-enc_text = tokenizer.encode(raw_text)
-enc_sample = enc_text[50:]
+```powershell
+frankengpt train --help
+frankengpt generate --help
+frankengpt benchmark --help
+frankengpt fetch-data --help
 ```
 
-Create shifted pairs:
-
-```python
-context_size = 4
-x = enc_sample[:context_size]
-y = enc_sample[1:context_size + 1]
-```
-
-`y` is always `x` shifted by one token.
-
-## Step 5: Efficient PyTorch dataset + dataloader
-
-Implemented:
-
-- `GPTDatasetV1(Dataset)`
-- `create_dataloader_v1(txt, batch_size=4, max_length=256, stride=128, suffle=True, drop_last=True, num_workers=0)`
-
-`GPTDatasetV1` logic:
-
-1. Encode full text once with GPT-2 BPE.
-2. Slide a window over token IDs.
-3. For each window:
-   - `input_chunk = tokens[i : i + max_length]`
-   - `target_chunk = tokens[i + 1 : i + max_length + 1]`
-4. Return `(input_ids, target_ids)` tensors.
-
-`create_dataloader_v1` creates a `DataLoader` over this dataset.
-
-### Batch demo
-
-The script includes:
-
-```python
-data_iter = iter(dataloader)
-first_batch = next(data_iter)
-second_batch = next(data_iter)
-```
-
-and prints both to show sequential sliding behavior.
-
-It also checks shift alignment:
-
-```python
-torch.equal(first_batch[0][:, 1:], first_batch[1][:, :-1])
-```
-
-Expected: `True`.
-
-## Step 6: Max length vs stride tradeoff
-
-The script prints stats for:
-
-- `(max_length=2, stride=8)`
-- `(max_length=8, stride=2)`
-- `(max_length=8, stride=8)`
-- `(max_length=8, stride=1)`
-
-### Intuition diagram
-
-Token positions:
-
-```text
-0 1 2 3 4 5 6 7 8 9 10 11 ...
-```
-
-Case A: `max_length=8, stride=8` (no overlap):
-
-```text
-[0........7] [8........15] [16.......23]
-```
-
-Case B: `max_length=8, stride=2` (heavy overlap):
-
-```text
-[0........7]
-    [2........9]
-        [4........11]
-            [6........13]
-```
-
-Case C: `max_length=2, stride=8` (sparse coverage):
-
-```text
-[0.1]        [8.9]        [16.17]
-```
-
-### Practical guidance
-
-- To avoid skipping tokens, use `stride <= max_length` and preferably `stride=1` for full coverage.
-- Smaller stride increases overlap and training examples, but may increase overfitting risk due to repeated near-identical contexts.
-- Larger stride reduces overlap and compute cost, but can skip many token positions.
-
-## Step 7: Token + positional embeddings (256 dims)
-
-Now convert token IDs into dense vectors for the model:
-
-```python
-output_dim = 256
-token_embedding_layer = torch.nn.Embedding(vocab_size, output_dim)
-```
-
-Add positional information using context length:
-
-```python
-context_length = max_length
-pos_embedding_layer = torch.nn.Embedding(context_length, output_dim)
-pos_embeddings = pos_embedding_layer(torch.arange(context_length))
-```
-
-In the script, `context_length` is taken from a real batch shape and token embeddings
-are computed from batch token IDs:
-
-```python
-token_embeddings = token_embedding_layer(batch_input_ids)
-input_embeddings = token_embeddings + pos_embeddings
-```
-
-Expected shapes:
-
-- `pos_embeddings`: `[context_length, 256]`
-- `token_embeddings`: `[batch_size, context_length, 256]`
-- `input_embeddings`: `[batch_size, context_length, 256]`
-
-These `input_embeddings` are what the main LLM blocks (attention, MLP, etc.) consume.
+Use this sequence whenever you experiment: train, inspect the validation loss and saved
+artifacts, resume if needed, generate with controlled sampling, and benchmark the result.
