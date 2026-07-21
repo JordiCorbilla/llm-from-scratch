@@ -29,3 +29,10 @@ def test_strip_gutenberg_boilerplate():
 def test_make_loaders_requires_one_full_training_batch():
     with pytest.raises(ValueError, match="full batch"):
         make_loaders([0, 1, 2, 3, 4, 5], context_length=2, batch_size=8)
+
+
+def test_make_loaders_keeps_validation_tokens_out_of_training():
+    train_loader, val_loader = make_loaders(list(range(30)), context_length=2, batch_size=2)
+    train_tokens = set(train_loader.dataset.tokens.tolist())
+    val_tokens = set(val_loader.dataset.tokens.tolist())
+    assert train_tokens.isdisjoint(val_tokens)

@@ -4,13 +4,36 @@ FrankenGPT is a compact decoder-only Transformer that you can train, resume, ben
 and sample on your own machine. This guide follows the complete workflow from a fresh
 checkout to a verified model checkpoint and generated text.
 
+This is an educational language model: it uses the same core learning objective and
+decoder architecture as GPT, but it is intentionally small enough to inspect and train
+locally. It is not a production-scale LLM or a route to ChatGPT-quality output on one
+novel.
+
+## What "from scratch" means
+
+The scratch workflow does not download model weights or reuse a pretrained tokenizer.
+FrankenGPT:
+
+1. builds a vocabulary from the text you provide;
+2. initializes every model weight randomly;
+3. learns next-token prediction only from that corpus; and
+4. saves checkpoints that are entirely the result of your training run.
+
+The optional Hugging Face showcase later in the guide is deliberately labelled
+**pretrained** and is not part of the from-scratch path.
+
 ## Learning path
 
-Follow the 11 steps in order to go from installation to a trained, resumed, sampled, and
-benchmarked model. The maintained implementation lives in `src/frankengpt`;
-`frankenlex_bootstrap.py` is a backward-compatible entry point for the command-line app.
-The project runs on CPU and automatically uses CUDA mixed precision when a CUDA PyTorch
-build is available.
+Follow Steps 1–7 for the essential from-scratch journey: install the project, understand
+the model, train it, verify learning, resume a checkpoint, generate text, and scale the
+experiment. Steps 8–11 cover better data, benchmarking, validation, and the command
+reference.
+
+For the implementation behind each stage, read the
+[from-scratch architecture walkthrough](docs/architecture.md). The maintained code lives
+in `src/frankengpt`; `frankenlex_bootstrap.py` is a backward-compatible entry point for the
+command-line app. The project runs on CPU and uses CUDA mixed precision automatically
+when a CUDA PyTorch build is selected.
 
 ## Step 1 - Create an isolated Python environment
 
@@ -32,7 +55,7 @@ The project uses the standard `pyproject.toml` editable-install workflow (PEP 66
 a current version of `pip` rather than invoking `setup.py` directly. A virtual environment
 keeps the project dependencies separate from the system Python installation.
 
-### Enable NVIDIA GPU acceleration
+### Optional: enable NVIDIA GPU acceleration
 
 The default Python package index may install a CPU-only PyTorch wheel even when the machine
 has an NVIDIA GPU. Check the installed build:
@@ -51,7 +74,9 @@ python -m pip install --force-reinstall torch `
 ```
 
 Run the check again and confirm that it prints a `+cu...` PyTorch version followed by
-`True`. FrankenGPT's default `--device auto` will then select CUDA automatically.
+`True`. FrankenGPT's default `--device auto` will then select CUDA automatically. The
+first smoke run below explicitly uses CPU so every reader can reproduce it; switch to
+CUDA for the larger run in Step 7.
 
 Confirm that the command-line application is available:
 
@@ -62,8 +87,29 @@ frankengpt --help
 ## Step 2 - Understand what will be trained
 
 The model learns next-token prediction. A sequence such as `The creature was` becomes an
-input, and the desired target is the same sequence shifted by one token. The model is a
-GPT-style decoder with:
+input, and the desired target is the same sequence shifted by one token:
+
+```text
+input:   The creature was
+target:      creature was ...
+```
+
+During training, the complete data flow is:
+
+```mermaid
+flowchart LR
+    A["Corpus text"] --> B["Tokenizer and vocabulary"]
+    B --> C["Shifted input/target windows"]
+    C --> D["Token + position embeddings"]
+    D --> E["Causal Transformer blocks"]
+    E --> F["Next-token logits"]
+    F --> G["Cross-entropy loss"]
+    G --> H["AdamW weight update"]
+    H --> I["Checkpoint"]
+    I --> J["Autoregressive generation"]
+```
+
+The model is a GPT-style decoder with:
 
 - learned token and positional embeddings
 - masked multi-head self-attention, so a token cannot see future tokens
@@ -72,11 +118,15 @@ GPT-style decoder with:
 - AdamW, warmup plus cosine learning-rate decay, gradient clipping, checkpoints, and
   CUDA mixed precision when CUDA is selected
 
+See [How FrankenGPT works](docs/architecture.md) for tensor shapes, the causal mask,
+attention calculations, residual blocks, loss, optimization, and sampling.
+
 ## Step 3 - Train a small model from scratch
 
 Run this small CPU experiment first. `--download` obtains the Project Gutenberg
 Frankenstein corpus when `data/pg84.txt` is not already present. The command uses a
-word-level vocabulary and a deliberately small model so that it finishes quickly.
+word-level vocabulary so generated tokens are easy to inspect, plus a deliberately small
+model so that the end-to-end check finishes quickly.
 
 ```powershell
 frankengpt train --download --data data/pg84.txt --tokenizer word --max-vocab 2048 `
@@ -100,10 +150,10 @@ vocabulary size, and loss trend are the useful checks.
   "device": "cpu",
   "parameters": 91520,
   "vocab_size": 2048,
-  "tokens_per_second": 2737.4,
+  "tokens_per_second": 2014.8,
   "history": [
-    {"step": 5.0, "train_loss": 7.6221, "val_loss": 7.6297, "lr": 0.00018},
-    {"step": 10.0, "train_loss": 7.5760, "val_loss": 7.5936, "lr": 0.00030}
+    {"step": 5.0, "train_loss": 7.6218, "val_loss": 7.6328, "lr": 0.00018},
+    {"step": 10.0, "train_loss": 7.5856, "val_loss": 7.6039, "lr": 0.00030}
   ]
 }
 ```
@@ -115,6 +165,10 @@ Both the training loss and the held-out validation loss decreased. That is the f
 evidence that optimization and validation are working. Throughput is machine-dependent;
 the parameter count, vocabulary size, and loss history are the stable checks for this
 configuration.
+
+- `train_loss` measures prediction error on text used for weight updates.
+- `val_loss` measures prediction error on held-out text that is not used for updates.
+- lower loss is better; a widening train/validation gap is a warning sign for overfitting.
 
 Inspect the files that were saved:
 
@@ -155,9 +209,9 @@ frankengpt generate --checkpoint runs/readme-smoke/checkpoint_best.pt --prompt "
 One actual sample from the first command was:
 
 ```text
-The and accents ship God, direction considered events soon disappeared, figure
-disappeared disappeared books direction direction quickly the remained grief quickly
-disappeared grief
+The earth interested does desires enemy affectionate desires disappeared figure figure
+figure desires distinct noble.. the familiar valley valley safety disappeared disappeared
+the
 ```
 
 The text is intentionally not fluent after only ten updates. The successful outcome here
@@ -184,6 +238,10 @@ continues with eager execution on the selected device.
 The repository also includes a verified 2,000-step CPU checkpoint. See the
 [training report](docs/training_report.md) for its configuration, loss history, generation
 assessment, and benchmark notes.
+
+The default character model has about 0.8 million parameters. Calling it an LLM describes
+the architecture and learning task, not its scale: coherent, general-purpose language
+generation requires far more parameters, varied data, context, and compute.
 
 ## Step 8 - Improve the data for a better showcase
 
@@ -260,6 +318,19 @@ files you trust: PyTorch checkpoints can contain pickled Python data.
 
 Use this sequence whenever you experiment: train, inspect the validation loss and saved
 artifacts, resume if needed, generate with controlled sampling, and benchmark the result.
+
+## Troubleshooting
+
+- **`torch.cuda.is_available()` is `False`:** install a CUDA PyTorch wheel using the
+  selector in Step 1; an NVIDIA driver alone is not enough.
+- **The corpus is too short for a full batch:** reduce `--batch-size` or
+  `--context-length`, or train on more text.
+- **A checkpoint does not match the run:** resume with the same tokenizer and model
+  options, changing only operational values such as `--max-steps`.
+- **Generated text is incoherent:** first confirm that validation loss decreases, then
+  increase the training budget and corpus. Ten steps only validate the pipeline.
+- **`--compile` warns and falls back:** the compiler backend is unavailable; training
+  continues safely in eager mode on the selected CPU or GPU.
 
 ## License
 

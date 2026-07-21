@@ -8,6 +8,8 @@ version = "0.1.0"
 description = "A small, trainable GPT-style language model built from scratch."
 readme = "README.md"
 requires-python = ">=3.10"
+# PyTorch initializes its NumPy interoperability during normal imports. Keeping NumPy in
+# the base install avoids a user-facing warning and supports tensor/array conversion.
 dependencies = ["numpy>=1.24", "torch>=2.1"]
 
 [project.optional-dependencies]

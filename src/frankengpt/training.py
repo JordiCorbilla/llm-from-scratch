@@ -46,11 +46,15 @@ def select_device(requested: str = "auto") -> torch.device:
 def make_loaders(
     token_ids: list[int], context_length: int, batch_size: int
 ) -> tuple[DataLoader, DataLoader]:
-    split = max(context_length + 2, int(len(token_ids) * 0.9))
+    minimum_partition = context_length + 1
+    if len(token_ids) < 2 * minimum_partition:
+        raise ValueError("corpus is too short for separate training and validation windows")
+    split = max(
+        minimum_partition,
+        min(int(len(token_ids) * 0.9), len(token_ids) - minimum_partition),
+    )
     train_data = TokenDataset(token_ids[:split], context_length)
-    val_data = TokenDataset(token_ids[split - context_length :], context_length)
-    if not train_data or not val_data:
-        raise ValueError("corpus is too short for the selected context length")
+    val_data = TokenDataset(token_ids[split:], context_length)
     if len(train_data) < batch_size:
         raise ValueError("training split does not contain one full batch")
     return (
@@ -219,7 +223,7 @@ def train_model(
             except Exception as error:
                 if not compile_active:
                     raise
-                detail = str(error).splitlines()[0]
+                detail = next(iter(str(error).splitlines()), type(error).__name__)
                 warnings.warn(
                     f"torch.compile failed; continuing with eager execution: {detail}",
                     RuntimeWarning,
