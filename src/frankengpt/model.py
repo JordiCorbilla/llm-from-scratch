@@ -112,7 +112,7 @@ class GPT(nn.Module):
             x = block(x)
         logits = self.lm_head(self.ln_f(x))
         loss = (
-            F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+            F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))
             if targets is not None
             else None
         )
