@@ -28,3 +28,25 @@ def test_word_training_uses_actual_tokenizer_vocabulary(tmp_path):
         max_vocab=64,
     )
     assert stats["vocab_size"] == 4
+
+
+def test_compile_failure_falls_back_to_eager_execution(tmp_path, monkeypatch):
+    class FailingCompiledModel:
+        def __call__(self, *_args, **_kwargs):
+            raise RuntimeError("compiler backend unavailable")
+
+    monkeypatch.setattr(torch, "compile", lambda _model: FailingCompiledModel())
+    config = GPTConfig(
+        vocab_size=8, context_length=2, d_model=8, n_heads=2, n_layers=1, dropout=0.0
+    )
+    options = TrainOptions(max_steps=1, batch_size=1, eval_interval=1, eval_batches=1)
+    with pytest.warns(RuntimeWarning, match="continuing with eager execution"):
+        stats = train_model(
+            "abcdabcdabcd",
+            config,
+            tmp_path,
+            options,
+            device_name="cpu",
+            compile_model=True,
+        )
+    assert stats["history"][-1]["step"] == 1

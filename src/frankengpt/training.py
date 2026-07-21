@@ -6,7 +6,9 @@ import json
 import math
 import time
 import tracemalloc
+import warnings
 from dataclasses import asdict, dataclass, replace
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -158,9 +160,25 @@ def train_model(
     train_loader, val_loader = make_loaders(token_ids, config.context_length, options.batch_size)
     model = GPT(config).to(device)
     train_forward = model
-    if compile_model and hasattr(torch, "compile"):
-        # Keep the uncompiled module as the checkpoint source; compiled state dict keys differ.
-        train_forward = torch.compile(model)
+    compile_active = False
+    if compile_model:
+        if device.type == "cuda" and find_spec("triton") is None:
+            warnings.warn(
+                "torch.compile requires Triton for the default CUDA backend; "
+                "continuing with eager execution",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        elif hasattr(torch, "compile"):
+            # Keep the uncompiled module as the checkpoint source; compiled state dict keys differ.
+            train_forward = torch.compile(model)
+            compile_active = True
+        else:
+            warnings.warn(
+                "torch.compile is unavailable; continuing with eager execution",
+                RuntimeWarning,
+                stacklevel=2,
+            )
     optimizer = model.configure_optimizer(options.learning_rate, options.weight_decay)
     scheduler = _scheduler(optimizer, options)
     start_step, history = 0, []
@@ -195,7 +213,21 @@ def train_model(
             inputs, targets = next(iterator)
         optimizer.zero_grad(set_to_none=True)
         with torch.autocast(device_type=device.type, enabled=device.type == "cuda"):
-            _, loss = train_forward(inputs.to(device), targets.to(device))
+            device_inputs, device_targets = inputs.to(device), targets.to(device)
+            try:
+                _, loss = train_forward(device_inputs, device_targets)
+            except Exception as error:
+                if not compile_active:
+                    raise
+                detail = str(error).splitlines()[0]
+                warnings.warn(
+                    f"torch.compile failed; continuing with eager execution: {detail}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                train_forward = model
+                compile_active = False
+                _, loss = train_forward(device_inputs, device_targets)
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), options.grad_clip)
