@@ -8,6 +8,7 @@ import time
 import tracemalloc
 import warnings
 from dataclasses import asdict, dataclass, replace
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -161,7 +162,14 @@ def train_model(
     train_forward = model
     compile_active = False
     if compile_model:
-        if hasattr(torch, "compile"):
+        if device.type == "cuda" and find_spec("triton") is None:
+            warnings.warn(
+                "torch.compile requires Triton for the default CUDA backend; "
+                "continuing with eager execution",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        elif hasattr(torch, "compile"):
             # Keep the uncompiled module as the checkpoint source; compiled state dict keys differ.
             train_forward = torch.compile(model)
             compile_active = True
@@ -211,8 +219,9 @@ def train_model(
             except Exception as error:
                 if not compile_active:
                     raise
+                detail = str(error).splitlines()[0]
                 warnings.warn(
-                    f"torch.compile failed; continuing with eager execution: {error}",
+                    f"torch.compile failed; continuing with eager execution: {detail}",
                     RuntimeWarning,
                     stacklevel=2,
                 )
