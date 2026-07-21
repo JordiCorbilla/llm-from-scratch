@@ -20,63 +20,143 @@ def _config(args: argparse.Namespace, vocab_size: int) -> GPTConfig:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    formatter = argparse.ArgumentDefaultsHelpFormatter
     parser = argparse.ArgumentParser(
-        prog="frankengpt", description="Train a small GPT on Frankenstein."
+        prog="frankengpt",
+        description="Train, evaluate, and sample a compact GPT-style language model.",
+        formatter_class=formatter,
     )
     sub = parser.add_subparsers(dest="command", required=True)
-    train = sub.add_parser("train")
-    train.add_argument("--data", nargs="+", default=["data/pg84.txt"])
-    train.add_argument("--output", default="runs/frankenstein")
-    train.add_argument("--download", action="store_true")
-    train.add_argument("--resume")
-    train.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
-    train.add_argument("--max-steps", type=int, default=100)
-    train.add_argument("--batch-size", type=int, default=32)
-    train.add_argument("--context-length", type=int, default=64)
-    train.add_argument("--d-model", type=int, default=128)
-    train.add_argument("--n-heads", type=int, default=4)
-    train.add_argument("--n-layers", type=int, default=4)
-    train.add_argument("--dropout", type=float, default=0.1)
-    train.add_argument("--learning-rate", type=float, default=3e-4)
-    train.add_argument("--eval-interval", type=int, default=25)
-    train.add_argument("--compile", action="store_true")
-    train.add_argument("--tokenizer", choices=["char", "word"], default="char")
-    train.add_argument("--max-vocab", type=int, default=2_048)
-    fetch = sub.add_parser("fetch-data", help="Download curated Project Gutenberg classics.")
-    fetch.add_argument("--output-dir", default="data/classics")
-    fetch.add_argument("--sources", nargs="*", choices=sorted(CLASSIC_CORPORA))
+    train = sub.add_parser(
+        "train",
+        help="Train from scratch or resume a compatible checkpoint.",
+        description="Train from scratch or resume a compatible checkpoint.",
+        formatter_class=formatter,
+    )
+    train.add_argument(
+        "--data", nargs="+", default=["data/pg84.txt"], help="Corpus paths or glob patterns."
+    )
+    train.add_argument("--output", default="runs/frankenstein", help="Run artifact directory.")
+    train.add_argument(
+        "--download",
+        action="store_true",
+        help="Download Frankenstein when the default corpus path is missing.",
+    )
+    train.add_argument("--resume", help="Last checkpoint from a compatible training run.")
+    train.add_argument(
+        "--device", default="auto", choices=["auto", "cpu", "cuda"], help="Compute device."
+    )
+    train.add_argument("--max-steps", type=int, default=100, help="Total optimizer steps.")
+    train.add_argument("--batch-size", type=int, default=32, help="Sequences per optimizer step.")
+    train.add_argument(
+        "--context-length", type=int, default=64, help="Tokens in each training sequence."
+    )
+    train.add_argument("--d-model", type=int, default=128, help="Embedding and hidden width.")
+    train.add_argument("--n-heads", type=int, default=4, help="Attention heads per layer.")
+    train.add_argument("--n-layers", type=int, default=4, help="Transformer decoder blocks.")
+    train.add_argument("--dropout", type=float, default=0.1, help="Dropout probability.")
+    train.add_argument(
+        "--learning-rate", type=float, default=3e-4, help="Peak AdamW learning rate."
+    )
+    train.add_argument(
+        "--eval-interval", type=int, default=25, help="Steps between loss evaluations."
+    )
+    train.add_argument(
+        "--compile", action="store_true", help="Use torch.compile when it is available."
+    )
+    train.add_argument(
+        "--tokenizer", choices=["char", "word"], default="char", help="Tokenizer type."
+    )
+    train.add_argument(
+        "--max-vocab", type=int, default=2_048, help="Maximum word-token vocabulary size."
+    )
+    fetch = sub.add_parser(
+        "fetch-data",
+        help="Download curated Project Gutenberg classics.",
+        description="Download curated Project Gutenberg classics.",
+        formatter_class=formatter,
+    )
+    fetch.add_argument("--output-dir", default="data/classics", help="Download directory.")
+    fetch.add_argument(
+        "--sources",
+        nargs="*",
+        choices=sorted(CLASSIC_CORPORA),
+        help="Books to download; omit to download the complete collection.",
+    )
     fine_tune = sub.add_parser(
-        "finetune-pretrained", help="Fine-tune distilgpt2 locally for showcase text."
+        "finetune-pretrained",
+        help="Fine-tune a Hugging Face causal language model.",
+        description="Fine-tune a Hugging Face causal language model on local text.",
+        formatter_class=formatter,
     )
-    fine_tune.add_argument("--data", nargs="+", required=True)
-    fine_tune.add_argument("--output", default="runs/distilgpt2-classics")
-    fine_tune.add_argument("--model", default="distilgpt2")
-    fine_tune.add_argument("--max-steps", type=int, default=200)
-    fine_tune.add_argument("--batch-size", type=int, default=2)
-    fine_tune.add_argument("--block-size", type=int, default=128)
-    fine_tune.add_argument("--learning-rate", type=float, default=5e-5)
-    fine_tune.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
-    generate_pretrained_parser = sub.add_parser("generate-pretrained")
-    generate_pretrained_parser.add_argument("--checkpoint", required=True)
-    generate_pretrained_parser.add_argument("--prompt", required=True)
-    generate_pretrained_parser.add_argument("--max-new-tokens", type=int, default=160)
-    generate_pretrained_parser.add_argument("--temperature", type=float, default=0.7)
-    generate_pretrained_parser.add_argument("--top-k", type=int, default=30)
+    fine_tune.add_argument("--data", nargs="+", required=True, help="Corpus paths or globs.")
+    fine_tune.add_argument(
+        "--output", default="runs/distilgpt2-classics", help="Hugging Face output directory."
+    )
+    fine_tune.add_argument("--model", default="distilgpt2", help="Base model ID or local path.")
+    fine_tune.add_argument("--max-steps", type=int, default=200, help="Optimizer steps.")
+    fine_tune.add_argument("--batch-size", type=int, default=2, help="Token blocks per step.")
+    fine_tune.add_argument("--block-size", type=int, default=128, help="Tokens per text block.")
+    fine_tune.add_argument(
+        "--learning-rate", type=float, default=5e-5, help="AdamW learning rate."
+    )
+    fine_tune.add_argument(
+        "--device", default="auto", choices=["auto", "cpu", "cuda"], help="Compute device."
+    )
+    generate_pretrained_parser = sub.add_parser(
+        "generate-pretrained",
+        help="Generate text from a fine-tuned Hugging Face checkpoint.",
+        description="Generate text from a fine-tuned Hugging Face checkpoint.",
+        formatter_class=formatter,
+    )
     generate_pretrained_parser.add_argument(
-        "--device", default="auto", choices=["auto", "cpu", "cuda"]
+        "--checkpoint", required=True, help="Fine-tuned model directory."
     )
-    generate = sub.add_parser("generate")
-    generate.add_argument("--checkpoint", required=True)
-    generate.add_argument("--prompt", required=True)
-    generate.add_argument("--max-new-tokens", type=int, default=160)
-    generate.add_argument("--temperature", type=float, default=0.8)
-    generate.add_argument("--top-k", type=int)
-    generate.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
-    bench = sub.add_parser("benchmark")
-    bench.add_argument("--checkpoint", required=True)
-    bench.add_argument("--batch-size", type=int, default=8)
-    bench.add_argument("--iterations", type=int, default=20)
-    bench.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
+    generate_pretrained_parser.add_argument("--prompt", required=True, help="Prompt text.")
+    generate_pretrained_parser.add_argument(
+        "--max-new-tokens", type=int, default=160, help="Maximum generated tokens."
+    )
+    generate_pretrained_parser.add_argument(
+        "--temperature", type=float, default=0.7, help="Sampling temperature."
+    )
+    generate_pretrained_parser.add_argument(
+        "--top-k", type=int, default=30, help="Limit sampling to the top-k tokens."
+    )
+    generate_pretrained_parser.add_argument(
+        "--device", default="auto", choices=["auto", "cpu", "cuda"], help="Compute device."
+    )
+    generate = sub.add_parser(
+        "generate",
+        help="Generate text from a scratch-model checkpoint.",
+        description="Generate text from a scratch-model checkpoint.",
+        formatter_class=formatter,
+    )
+    generate.add_argument("--checkpoint", required=True, help="Trusted .pt checkpoint path.")
+    generate.add_argument("--prompt", required=True, help="Prompt text in the model vocabulary.")
+    generate.add_argument(
+        "--max-new-tokens", type=int, default=160, help="Number of tokens to generate."
+    )
+    generate.add_argument(
+        "--temperature", type=float, default=0.8, help="Sampling temperature."
+    )
+    generate.add_argument("--top-k", type=int, help="Limit sampling to the top-k tokens.")
+    generate.add_argument(
+        "--device", default="auto", choices=["auto", "cpu", "cuda"], help="Compute device."
+    )
+    bench = sub.add_parser(
+        "benchmark",
+        help="Measure forward and generation throughput.",
+        description="Measure forward and autoregressive generation throughput.",
+        formatter_class=formatter,
+    )
+    bench.add_argument("--checkpoint", required=True, help="Trusted .pt checkpoint path.")
+    bench.add_argument("--batch-size", type=int, default=8, help="Synthetic batch size.")
+    bench.add_argument(
+        "--iterations", type=int, default=20, help="Timed forward-pass iterations."
+    )
+    bench.add_argument(
+        "--device", default="auto", choices=["auto", "cpu", "cuda"], help="Compute device."
+    )
     return parser
 
 

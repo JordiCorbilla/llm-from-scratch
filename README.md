@@ -4,23 +4,18 @@ FrankenGPT is a compact decoder-only Transformer that you can train, resume, ben
 and sample on your own machine. This guide follows the complete workflow from a fresh
 checkout to a verified model checkpoint and generated text.
 
-This repository continues the book-style journey from tokenization and embeddings to a
-compact, end-to-end decoder-only Transformer. It trains locally on Mary Shelley's
-*Frankenstein*, runs on CPU, and automatically uses CUDA mixed precision when a CUDA
-PyTorch build is available.
-
 ## Learning path
 
-Follow the steps in order. Steps 1-7 preserve the original learning notes and their
-small, inspectable examples. Steps 8-12 continue from those foundations into a runnable
-GPT training, checkpointing, and inference workflow. The maintained implementation lives
-in `src/frankengpt`; `frankenlex_bootstrap.py` remains a bridge to the CLI for readers
-following the earlier material.
+Follow the 11 steps in order to go from installation to a trained, resumed, sampled, and
+benchmarked model. The maintained implementation lives in `src/frankengpt`;
+`frankenlex_bootstrap.py` is a backward-compatible entry point for the command-line app.
+The project runs on CPU and automatically uses CUDA mixed precision when a CUDA PyTorch
+build is available.
 
 ## Step 1 - Create an isolated Python environment
 
-Use Python 3.10 or newer. In PowerShell, create and activate a virtual environment, then
-install the project and its development tools.
+Use Python 3.10 or newer. Create and activate a virtual environment, then install the
+project and its development tools.
 
 ```powershell
 python -m venv .venv
@@ -28,6 +23,10 @@ python -m venv .venv
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
+
+On macOS or Linux, activate the environment with `source .venv/bin/activate`; the
+remaining commands are the same. The examples below use PowerShell's backtick for line
+continuation. Other shells can run each example on one line.
 
 The project uses the standard `pyproject.toml` editable-install workflow (PEP 660), so use
 a current version of `pip` rather than invoking `setup.py` directly. A virtual environment
@@ -88,7 +87,7 @@ vocabulary size, and loss trend are the useful checks.
 }
 ```
 
-At this scale, use the loss history and checkpoints-not prose fluency-as the success
+At this scale, use the loss history and checkpoints—not prose fluency—as the success
 criteria.
 
 Both the training loss and the held-out validation loss decreased. That is the first
@@ -160,6 +159,10 @@ If CUDA is available, replace `--device cpu` with `--device cuda`. CUDA automati
 enables mixed precision. Add `--compile` to opt in to `torch.compile` when it is supported
 by your PyTorch installation.
 
+The repository also includes a verified 2,000-step CPU checkpoint. See the
+[training report](docs/training_report.md) for its configuration, loss history, generation
+assessment, and benchmark notes.
+
 ## Step 8 - Improve the data for a better showcase
 
 Training longer on a single book eventually overfits. Download several public-domain
@@ -176,7 +179,23 @@ frankengpt generate --checkpoint runs/classics-word/checkpoint_best.pt `
 
 If CUDA is unavailable, change the training command to `--device cpu` and reduce the
 batch size if memory is limited.
+
+### Optional pretrained showcase
+
+The scratch models demonstrate the architecture, but coherent prose requires much more
+data and compute. For a polished local demo, fine-tune `distilgpt2` on the classics
+collection. This is a separate pretrained-base workflow, not training from scratch.
+
+```powershell
+python -m pip install -e ".[showcase]"
+frankengpt finetune-pretrained --data data/classics/*.txt --device cuda `
+  --max-steps 200 --output runs/distilgpt2-classics
+frankengpt generate-pretrained --checkpoint runs/distilgpt2-classics `
+  --prompt "My dear Victor," --temperature 0.7 --top-k 30
 ```
+
+Use `--device cpu` if CUDA is unavailable. The first run downloads the selected base model
+from Hugging Face.
 
 ## Step 9 - Benchmark the checkpoint
 
@@ -190,11 +209,11 @@ Run the same command with `--device cuda` on a CUDA machine to measure GPU perfo
 
 ## Step 10 - Run the project checks
 
-Before changing the model, run the formatter checks and test suite:
+Before changing the model, run the lint checks and test suite:
 
 ```powershell
-ruff check .
-pytest
+python -m ruff check .
+python -m pytest
 ```
 
 The tests cover tokenization, shifted dataset targets, Transformer forward passes, causal
@@ -203,14 +222,23 @@ and generation.
 
 ## Step 11 - Explore the available commands
 
-Each command provides its own options and defaults:
+The CLI contains these workflows:
 
-```powershell
-frankengpt train --help
-frankengpt generate --help
-frankengpt benchmark --help
-frankengpt fetch-data --help
-```
+| Command | Purpose |
+| --- | --- |
+| `frankengpt train` | Train from scratch or resume; write last/best checkpoints and metrics. |
+| `frankengpt generate` | Generate from a scratch-model checkpoint. |
+| `frankengpt benchmark` | Measure forward and autoregressive generation throughput. |
+| `frankengpt fetch-data` | Download the curated public-domain classics collection. |
+| `frankengpt finetune-pretrained` | Fine-tune a Hugging Face causal language model. |
+| `frankengpt generate-pretrained` | Generate from the fine-tuned Hugging Face checkpoint. |
+
+Append `--help` to any command to see its options and defaults. Only load `.pt` checkpoint
+files you trust: PyTorch checkpoints can contain pickled Python data.
 
 Use this sequence whenever you experiment: train, inspect the validation loss and saved
 artifacts, resume if needed, generate with controlled sampling, and benchmark the result.
+
+## License
+
+The repository is released under [CC0 1.0 Universal](LICENSE).
