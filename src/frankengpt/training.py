@@ -49,6 +49,11 @@ def make_loaders(
     val_data = TokenDataset(token_ids[split - context_length :], context_length)
     if not train_data or not val_data:
         raise ValueError("corpus is too short for the selected context length")
+    if len(train_data) < batch_size:
+        raise ValueError(
+            f"corpus produces only {len(train_data)} training samples, which is fewer than "
+            f"batch_size={batch_size}. Use a smaller batch size or provide more text."
+        )
     return (
         DataLoader(train_data, batch_size=batch_size, shuffle=True, drop_last=True),
         DataLoader(val_data, batch_size=batch_size, shuffle=False, drop_last=False),
@@ -65,6 +70,8 @@ def estimate_loss(model: GPT, loader: DataLoader, device: torch.device, batches:
         _, loss = model(inputs.to(device), targets.to(device))
         losses.append(float(loss.item()))
     model.train()
+    if not losses:
+        raise RuntimeError("DataLoader yielded no batches; cannot estimate loss.")
     return sum(losses) / len(losses)
 
 
@@ -149,6 +156,8 @@ def train_model(
         else CharTokenizer.from_text(text)
     )
     token_ids = tokenizer.encode(text)
+    if tokenizer.vocab_size != config.vocab_size:
+        config = GPTConfig(**{**config.to_dict(), "vocab_size": tokenizer.vocab_size})
     train_loader, val_loader = make_loaders(token_ids, config.context_length, options.batch_size)
     model = GPT(config).to(device)
     train_forward = model
