@@ -1,50 +1,135 @@
 # FrankenGPT: a trainable GPT from scratch
 
-This repository contains a compact, end-to-end decoder-only Transformer that trains locally on Mary Shelley's *Frankenstein*. It is intentionally small enough to run on CPU, but uses CUDA mixed precision automatically when a CUDA PyTorch build is available.
+This repository continues the book-style journey from tokenization and embeddings to a
+compact, end-to-end decoder-only Transformer. It trains locally on Mary Shelley's
+*Frankenstein*, runs on CPU, and automatically uses CUDA mixed precision when a CUDA
+PyTorch build is available.
 
-## Install
+## Learning path
+
+Follow the steps in order. Steps 1–7 preserve the original learning notes and their
+small, inspectable examples. Steps 8–12 continue from those foundations into a runnable
+GPT training, checkpointing, and inference workflow. The maintained implementation lives
+in `src/frankengpt`; `frankenlex_bootstrap.py` remains a bridge to the CLI for readers
+following the earlier material.
+
+## Setup
 
 ```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 
-## Train, resume, and sample
+The project uses the standard `pyproject.toml` editable-install workflow (PEP 660), so use
+a current version of `pip` rather than invoking `setup.py` directly. A virtual environment
+keeps the project dependencies separate from the system Python installation.
 
-The included `data/pg84.txt` is the Gutenberg corpus. Use a short run to validate the
-pipeline, then a longer run for the included showcase checkpoint:
+## Step 8: Build the decoder-only GPT
+
+The token and positional embeddings from Step 7 feed a stack of pre-layer-norm Transformer
+blocks. Each block applies causal multi-head self-attention, a residual connection, a
+GELU MLP, and another residual connection. The final language-model head shares its
+weights with the token embedding table. This is the next-token prediction model trained
+by the following steps.
+
+## Step 9: Train, resume, and sample
+
+The included `data/pg84.txt` is the Gutenberg corpus. Start with this deliberately small
+word-token experiment. It is quick enough for CPU and makes every training signal easy to
+inspect. The output directory is ignored by Git.
 
 ```powershell
-frankengpt train --device cpu --max-steps 100 --output runs/frankenstein
-frankengpt train --device cpu --max-steps 150 --resume runs/frankenstein/checkpoint_last.pt --output runs/frankenstein
-frankengpt generate --checkpoint runs/frankenstein/checkpoint_best.pt --prompt "I had worked hard" --temperature 0.7 --top-k 10
+frankengpt train --data data/pg84.txt --tokenizer word --max-vocab 2048 `
+  --device cpu --output runs/readme-smoke --max-steps 10 --batch-size 8 `
+  --context-length 16 --d-model 32 --n-heads 4 --n-layers 2 --eval-interval 5
 ```
 
-For the bundled character-level model, 100 steps only verifies that training works. It
-does not produce coherent prose. The checked-in showcase checkpoint was trained through
-2,000 steps; it is still a compact educational model rather than a production text model.
+For a larger character-level scratch run, use a new output directory and at least
+`--max-steps 2000`. Small runs validate the pipeline; they do not produce coherent prose.
 
-### Verified smoke-run output
+### Verify the training result
 
-The following is an **actual** output from the current word-token training path. It used
-the bundled Frankenstein corpus, CPU, 10 steps, a 2-layer 32-dimensional model, and
-`temperature=0.7`, `top_k=10`:
+The following is an **actual** CPU result from the command above. The loss is measured on
+the training split and a held-out validation split. Both decrease, which shows the
+optimizer is updating the model and improves beyond the current minibatch.
 
 ```text
-Training: train loss 7.622 -> 7.576; validation loss 7.630 -> 7.594
-
-Prompt: The
-Output: The safety interested interested few desires direction heavens heavens visible
-disappeared enemy affectionate safety quickly remained authors extinguish ship valley
-valley vengeance vengeance the entering
+{
+  "device": "cpu",
+  "parameters": 91520,
+  "vocab_size": 2048,
+  "tokens_per_second": 2737.4,
+  "history": [
+    {"step": 5.0, "train_loss": 7.6221, "val_loss": 7.6297, "lr": 0.00018},
+    {"step": 10.0, "train_loss": 7.5760, "val_loss": 7.5936, "lr": 0.00030}
+  ]
+}
 ```
 
-This demonstrates successful training, checkpoint loading, and generation—not coherent
-prose. For a user-facing demonstration, use the optional pretrained workflow below and
+At this scale, use the loss history and checkpoints—not prose fluency—as the success
+criteria. For a user-facing demonstration, use the optional pretrained workflow below and
 fine-tune for substantially more than the smoke-test budget.
 
-On a CUDA-capable system use `--device cuda`; mixed precision is enabled automatically. `--compile` opts in to `torch.compile` where PyTorch supports it. If the corpus is absent, add `--download` to train.
+Throughput is machine-dependent; the parameter count, vocabulary size, and loss history
+are the stable checks for this configuration.
 
-## Better showcase: train on multiple books
+Confirm that the run wrote `checkpoint_best.pt`, `checkpoint_last.pt`, and `metrics.json`:
+
+```powershell
+Get-ChildItem runs/readme-smoke
+Get-Content runs/readme-smoke/metrics.json
+```
+
+## Step 10: Resume instead of starting over
+
+The checkpoint stores the model, tokenizer, optimizer, scheduler, training history, and
+current step. Continue the same run by increasing `--max-steps`; do not change the model
+or tokenizer options when resuming.
+
+```powershell
+frankengpt train --data data/pg84.txt --tokenizer word --max-vocab 2048 `
+  --device cpu --output runs/readme-smoke --resume runs/readme-smoke/checkpoint_last.pt `
+  --max-steps 12 --batch-size 8 --context-length 16 --d-model 32 --n-heads 4 `
+  --n-layers 2 --eval-interval 5
+```
+
+The resulting `metrics.json` keeps the earlier measurements and adds an evaluation at
+step 12. This verifies that training resumed from saved state instead of creating a new
+model.
+
+## Step 11: Generate and judge the result
+
+Load the best validation checkpoint and sample it. Temperature controls randomness;
+`top-k` restricts each choice to the most likely tokens. Try the commands below to see
+how prompt length and sampling affect the continuation.
+
+```powershell
+frankengpt generate --checkpoint runs/readme-smoke/checkpoint_best.pt --prompt "The" --max-new-tokens 24 --temperature 0.7 --top-k 10
+frankengpt generate --checkpoint runs/readme-smoke/checkpoint_best.pt --prompt "I had worked hard" --max-new-tokens 24 --temperature 0.5 --top-k 5
+frankengpt generate --checkpoint runs/readme-smoke/checkpoint_best.pt --prompt "I had worked hard for nearly two years" --max-new-tokens 24 --temperature 1.0 --top-k 30
+```
+
+One observed sample from the first command was:
+
+```text
+Prompt: The
+Output: The and accents ship God, direction considered events soon disappeared, figure
+disappeared disappeared books direction direction quickly the remained grief quickly
+disappeared grief
+```
+
+This is **correct evidence of a trained and sampled model**, but it is not fluent prose:
+ten updates on one small book are intentionally insufficient for coherence. The evidence
+to look for is decreasing held-out loss, saved checkpoints, a successful resume, and
+generation that returns learned corpus tokens rather than an error or random IDs.
+
+On a CUDA-capable system use `--device cuda`; mixed precision is enabled automatically.
+`--compile` opts in to `torch.compile` where PyTorch supports it. If the corpus is absent,
+add `--download` to train.
+
+## Step 12: Improve the showcase with more data
 
 More steps on one book lead to overfitting. Download the curated public-domain classics
 collection, then start a **new** word-token run; do not resume a single-book checkpoint
@@ -56,7 +141,7 @@ frankengpt train --data data/classics/*.txt --tokenizer word --max-vocab 16384 -
 frankengpt generate --checkpoint runs/classics-word/checkpoint_best.pt --prompt "I had worked hard for nearly two years" --temperature 0.6 --top-k 20
 ```
 
-## Polished local showcase (optional pretrained base)
+### Optional polished local showcase: pretrained base
 
 The scratch models demonstrate the architecture but need far more data for fluent prose.
 For a coherent demo, locally fine-tune `distilgpt2` on the same classics collection. This is
@@ -94,7 +179,7 @@ pytest
 frankengpt benchmark --checkpoint runs/frankenstein/checkpoint_best.pt --device cpu
 ```
 
-## Original learning notes (preserved background)
+## Steps 1-7: original learning notes (preserved background)
 
 The following notes document the original tokenizer and sliding-window work that led to
 the application. They are retained as learning material and historical context; the
