@@ -4,6 +4,19 @@ FrankenGPT is a compact decoder-only Transformer that you can train, resume, ben
 and sample on your own machine. This guide follows the complete workflow from a fresh
 checkout to a verified model checkpoint and generated text.
 
+This repository continues the book-style journey from tokenization and embeddings to a
+compact, end-to-end decoder-only Transformer. It trains locally on Mary Shelley's
+*Frankenstein*, runs on CPU, and automatically uses CUDA mixed precision when a CUDA
+PyTorch build is available.
+
+## Learning path
+
+Follow the steps in order. Steps 1-7 preserve the original learning notes and their
+small, inspectable examples. Steps 8-12 continue from those foundations into a runnable
+GPT training, checkpointing, and inference workflow. The maintained implementation lives
+in `src/frankengpt`; `frankenlex_bootstrap.py` remains a bridge to the CLI for readers
+following the earlier material.
+
 ## Step 1 - Create an isolated Python environment
 
 Use Python 3.10 or newer. In PowerShell, create and activate a virtual environment, then
@@ -15,6 +28,10 @@ python -m venv .venv
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
+
+The project uses the standard `pyproject.toml` editable-install workflow (PEP 660), so use
+a current version of `pip` rather than invoking `setup.py` directly. A virtual environment
+keeps the project dependencies separate from the system Python installation.
 
 Confirm that the command-line application is available:
 
@@ -47,6 +64,9 @@ frankengpt train --download --data data/pg84.txt --tokenizer word --max-vocab 20
   --context-length 16 --d-model 32 --n-heads 4 --n-layers 2 --eval-interval 5
 ```
 
+For a larger character-level scratch run, use a new output directory and at least
+`--max-steps 2000`. Small runs validate the pipeline; they do not produce coherent prose.
+
 The output directory contains all artifacts from the run and is ignored by Git.
 
 ## Step 4 - Verify that training actually happened
@@ -68,8 +88,15 @@ vocabulary size, and loss trend are the useful checks.
 }
 ```
 
+At this scale, use the loss history and checkpoints-not prose fluency-as the success
+criteria.
+
 Both the training loss and the held-out validation loss decreased. That is the first
-evidence that optimization and validation are working. Inspect the files that were saved:
+evidence that optimization and validation are working. Throughput is machine-dependent;
+the parameter count, vocabulary size, and loss history are the stable checks for this
+configuration.
+
+Inspect the files that were saved:
 
 ```powershell
 Get-ChildItem runs/readme-smoke
@@ -149,6 +176,7 @@ frankengpt generate --checkpoint runs/classics-word/checkpoint_best.pt `
 
 If CUDA is unavailable, change the training command to `--device cpu` and reduce the
 batch size if memory is limited.
+```
 
 ## Step 9 - Benchmark the checkpoint
 
