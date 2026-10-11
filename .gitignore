@@ -210,3 +210,4 @@ data/classics/
 # Ignore new training artifacts. Reference checkpoints already tracked under runs/ remain tracked.
 runs/*
 /.venv-system
+frankengpt-blog-draft.md
